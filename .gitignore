@@ -1,0 +1,9 @@
+.agents/
+.codex/
+.vercel/
+dist/
+node_modules/
+outputs/
+work/
+*.log
+*.zip
