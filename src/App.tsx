@@ -121,10 +121,10 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-ink-950/60 p-3 sm:items-center sm:justify-center">
-      <div className="max-h-[92vh] w-full overflow-auto rounded-lg bg-white shadow-soft dark:bg-ink-900 sm:max-w-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
-          <h2 className="text-lg font-bold">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-ink-950/60 p-3 sm:items-center sm:justify-center">
+      <div className="max-h-[92vh] w-full min-w-0 max-w-full overflow-auto rounded-lg bg-white shadow-soft dark:bg-ink-900 sm:max-w-2xl">
+        <div className="sticky top-0 z-10 flex min-w-0 items-center justify-between gap-3 border-b border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
+          <h2 className="min-w-0 text-lg font-bold">{title}</h2>
           <button className="btn-ghost min-h-10 px-3" onClick={onClose}>
             Close
           </button>
@@ -174,10 +174,10 @@ function Layout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen pb-24 lg:pb-0">
+    <div className="min-h-screen overflow-x-clip pb-24 lg:pb-0">
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/92 backdrop-blur dark:border-ink-800 dark:bg-ink-950/92">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <div>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-700 dark:text-signal-500">
               LifeOps
             </p>
@@ -189,7 +189,7 @@ function Layout({
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[230px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-7xl min-w-0 gap-5 px-3 py-5 sm:px-4 lg:grid-cols-[230px_minmax(0,1fr)]">
         <aside className="no-print hidden lg:block">
           <nav className="sticky top-24 space-y-1">
             {pages.map((item) => (
@@ -207,7 +207,7 @@ function Layout({
             ))}
           </nav>
         </aside>
-        <main>{children}</main>
+        <main className="min-w-0 max-w-full">{children}</main>
       </div>
 
       <button
@@ -218,11 +218,11 @@ function Layout({
         +
       </button>
 
-      <nav className="no-print fixed bottom-0 left-0 right-0 z-30 grid grid-cols-6 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-950 lg:hidden">
+      <nav className="no-print fixed bottom-0 left-0 right-0 z-30 grid min-w-0 grid-cols-6 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-950 lg:hidden">
         {pages.map((item) => (
           <button
             key={item.key}
-            className={`min-h-16 px-1 text-[11px] font-semibold ${
+            className={`min-h-16 min-w-0 px-0.5 text-[10px] font-semibold leading-tight min-[360px]:text-[11px] ${
               page === item.key
                 ? "text-signal-700 dark:text-signal-500"
                 : "text-ink-500 dark:text-ink-400"
@@ -292,7 +292,7 @@ function MissionForm({
         />
       </Field>
       {suggestions.length ? (
-        <div>
+        <div className="min-w-0">
           <p className="label">Suggested from open loops</p>
           <div className="flex flex-wrap gap-2">
             {suggestions.slice(0, 6).map((loop) => (
@@ -433,8 +433,8 @@ function Dashboard({
 
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <section className="card">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-bold">Open Loops Snapshot</h2>
+          <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-xl font-bold">Open Loops Snapshot</h2>
             <button className="btn-secondary" onClick={() => setPage("loops")}>
               Full Page
             </button>
@@ -450,8 +450,8 @@ function Dashboard({
         </section>
 
         <section className="card">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-bold">Projects Snapshot</h2>
+          <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-xl font-bold">Projects Snapshot</h2>
             <button className="btn-secondary" onClick={() => setPage("projects")}>
               Projects
             </button>
@@ -501,8 +501,8 @@ function Dashboard({
       </div>
 
       <section className="card">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Minimal Habit Check-In</h2>
+        <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="min-w-0 text-xl font-bold">Minimal Habit Check-In</h2>
           <span className="badge">Supportive, not streak-based</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -726,13 +726,13 @@ function OpenLoopsPage() {
         action={<button className="btn-primary" onClick={() => setEditing({ id: "", title: "", status: "Captured", priority: "Medium", createdAt: "", updatedAt: "", lastTouchedAt: "" })}>Quick Add</button>}
       />
       <section className="card space-y-3">
-        <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+        <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
           <input className="input" placeholder="Search open loops" value={search} onChange={(event) => setSearch(event.target.value)} />
           <CategorySelect categories={data.categories} value={categoryId} onChange={setCategoryId} />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex max-w-full flex-wrap gap-2 pb-1">
           {views.map((view) => (
-            <button key={view} className={filter === view ? "btn-primary whitespace-nowrap" : "btn-secondary whitespace-nowrap"} onClick={() => setFilter(view)}>
+            <button key={view} className={filter === view ? "btn-primary" : "btn-secondary"} onClick={() => setFilter(view)}>
               {view}
             </button>
           ))}
@@ -862,7 +862,7 @@ function ProjectCard({
   return (
     <article className={`panel p-3 ${stale ? "border-amberline-500/60" : ""}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold">{project.name}</h3>
             <span className="badge">{project.status}</span>
@@ -1002,7 +1002,7 @@ function AARPage() {
         {data.aarReviews.map((review) => (
           <article key={review.id} className="card">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-lg font-bold">{review.title}</h3>
                   <span className="badge">{review.type}</span>
@@ -1141,7 +1141,7 @@ function LessonsPage() {
         subtitle="A library of useful patterns from reviews, check-ins, projects, and failures."
         action={<button className="btn-primary" onClick={() => setEditing({ id: "", lesson: "", status: "Active", createdAt: "", updatedAt: "" })}>Add Lesson</button>}
       />
-      <section className="card grid gap-3 sm:grid-cols-[1fr_180px_auto]">
+      <section className="card grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
         <input className="input" placeholder="Search lessons" value={search} onChange={(event) => setSearch(event.target.value)} />
         <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
           {["All", "Active", "Applied", "Archived"].map((item) => <option key={item}>{item}</option>)}
@@ -1152,7 +1152,7 @@ function LessonsPage() {
         {lessons.map((lesson) => (
           <article key={lesson.id} className="card">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-bold">{lesson.lesson}</h3>
                   <span className="badge">{lesson.status}</span>
@@ -1277,17 +1277,17 @@ function SettingsPage() {
         <h2 className="text-xl font-bold">Categories</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {data.categories.map((category) => (
-            <div key={category.id} className="panel flex items-center gap-2 p-2">
-              <span className="h-4 w-4 rounded-full" style={{ backgroundColor: category.color || "#64748b" }} />
-              <input className="input min-h-10" value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} />
+            <div key={category.id} className="panel flex min-w-0 flex-col gap-2 p-2 min-[390px]:flex-row min-[390px]:items-center">
+              <span className="h-4 w-4 flex-none rounded-full" style={{ backgroundColor: category.color || "#64748b" }} />
+              <input className="input min-h-10 min-w-0 flex-1" value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} />
               <button className="btn-secondary min-h-10 px-3" onClick={() => updateCategory(category.id, { archived: !category.archived })}>
                 {category.archived ? "Unarchive" : "Archive"}
               </button>
             </div>
           ))}
         </div>
-        <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (newCategory.trim()) { addCategory(newCategory.trim()); setNewCategory(""); } }}>
-          <input className="input" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Add category" />
+        <form className="flex min-w-0 flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); if (newCategory.trim()) { addCategory(newCategory.trim()); setNewCategory(""); } }}>
+          <input className="input min-w-0 flex-1" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Add category" />
           <button className="btn-primary" type="submit">Add</button>
         </form>
       </section>
