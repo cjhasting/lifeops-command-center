@@ -208,6 +208,8 @@ export interface FinancialAssumptions {
   emergencyFundTarget: number;
   annualInvestment: number;
   expectedAnnualReturn: number;
+  annualEssentialExpenses?: number;
+  tspMatchCaptured?: boolean;
   currentAge?: number;
   retirementAge?: number;
   pensionMonthly?: number;
@@ -228,6 +230,7 @@ export interface FinancialData {
   holdings: InvestmentHolding[];
   assumptions: FinancialAssumptions;
   quarterlyChecklist: FinancialReviewItem[];
+  annualChecklist?: FinancialReviewItem[];
 }
 
 export interface AppData {

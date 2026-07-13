@@ -68,6 +68,30 @@ function withTimestamp<T extends { updatedAt?: string }>(item: T): T {
   return { ...item, updatedAt: nowIso() };
 }
 
+function migrateFinance(
+  snapshotFinance: FinancialData | undefined,
+  seedFinance: FinancialData,
+  snapshotVersion: number,
+): FinancialData {
+  if (!snapshotFinance) return seedFinance;
+  if (snapshotVersion >= 3) {
+    return {
+      ...snapshotFinance,
+      annualChecklist: snapshotFinance.annualChecklist || seedFinance.annualChecklist,
+    };
+  }
+  // HFOS v2 migration: refresh policy text and checklists, keep user numbers.
+  return {
+    ...snapshotFinance,
+    mission: seedFinance.mission,
+    principles: seedFinance.principles,
+    priorityOrder: seedFinance.priorityOrder,
+    quarterlyChecklist: seedFinance.quarterlyChecklist,
+    annualChecklist: seedFinance.annualChecklist,
+    assumptions: { ...seedFinance.assumptions, ...snapshotFinance.assumptions },
+  };
+}
+
 function normalizeData(snapshot?: AppData | null): AppData {
   const seed = createSeedData();
   if (!snapshot) return seed;
@@ -84,7 +108,7 @@ function normalizeData(snapshot?: AppData | null): AppData {
     lessons: snapshot.lessons || seed.lessons,
     habits: snapshot.habits || seed.habits,
     avoidanceCheckIns: snapshot.avoidanceCheckIns || seed.avoidanceCheckIns,
-    finance: snapshot.finance || seed.finance,
+    finance: migrateFinance(snapshot.finance, seed.finance, snapshot.version || 1),
     settings: { ...seed.settings, ...(snapshot.settings || {}) },
   };
 }

@@ -38,7 +38,7 @@ export function createSeedData(): AppData {
   const category = (name: string) => categories.find((item) => item.name === name)?.id;
 
   return {
-    version: 2,
+    version: 3,
     categories,
     missions: [
       {
@@ -170,14 +170,15 @@ export function createFinanceSeedData(): FinancialData {
       "Never time the market or panic sell.",
       "Increase investments as income rises.",
       "Keep the system simple enough to use for decades.",
+      "Eliminate emotional decisions; rely on repeatable rules.",
     ],
     priorityOrder: [
       "Cover essential expenses.",
-      "Build and protect the emergency fund.",
-      "Contribute to Roth TSP.",
-      "Max Roth IRA when eligible.",
+      "Contribute at least 5% to Roth TSP (never below the full match).",
+      "Maintain the emergency fund at target.",
+      "Max Roth IRA every year.",
       "Invest additional dollars in brokerage.",
-      "Consider extra mortgage payments only when aligned with larger goals.",
+      "Extra mortgage payments only when aligned with larger goals.",
     ],
     accounts: [
       {
@@ -186,7 +187,8 @@ export function createFinanceSeedData(): FinancialData {
         type: "TSP",
         balance: 0,
         annualContribution: 0,
-        targetRole: "Tax-advantaged retirement base.",
+        annualLimit: 23500,
+        targetRole: "Tax-advantaged retirement base. Never below 5% (full match).",
         updatedAt: now,
       },
       {
@@ -300,18 +302,29 @@ export function createFinanceSeedData(): FinancialData {
       emergencyFundTarget: 15000,
       annualInvestment: 12000,
       expectedAnnualReturn: 0.07,
+      annualEssentialExpenses: 0,
+      tspMatchCaptured: true,
       retirementAge: 60,
       pensionMonthly: 0,
       socialSecurityMonthly: 0,
     },
     quarterlyChecklist: [
-      { id: uid("review"), label: "Update balances for every account.", completed: false },
-      { id: uid("review"), label: "Confirm Roth IRA progress toward annual max.", completed: false },
+      { id: uid("review"), label: "Update holding values for every account.", completed: false },
+      { id: uid("review"), label: "Confirm Roth IRA progress toward the annual max.", completed: false },
+      { id: uid("review"), label: "Check allocations against targets (act only outside 5-point bands, contributions first).", completed: false },
+      { id: uid("review"), label: "Check individual stocks stay at or below 20% of brokerage.", completed: false },
+      { id: uid("review"), label: "Update invested assets and FI progress.", completed: false },
+      { id: uid("review"), label: "Export a JSON backup of this app.", completed: false },
+      { id: uid("review"), label: "Capture one lesson or adjustment.", completed: false },
+    ],
+    annualChecklist: [
+      { id: uid("review"), label: "Recalculate the FI target from current expenses and pension estimates.", completed: false },
+      { id: uid("review"), label: "Recalculate the emergency fund target (6 months of essential expenses).", completed: false },
       { id: uid("review"), label: "Review TSP allocation against 70 C / 20 I / 10 S.", completed: false },
-      { id: uid("review"), label: "Check brokerage individual stocks stay at or below 20%.", completed: false },
-      { id: uid("review"), label: "Review beneficiaries and insurance once this year.", completed: false },
-      { id: uid("review"), label: "Update net worth and FI countdown.", completed: false },
-      { id: uid("review"), label: "Capture one financial AAR lesson or adjustment.", completed: false },
+      { id: uid("review"), label: "Review beneficiaries on every account.", completed: false },
+      { id: uid("review"), label: "Review insurance coverage.", completed: false },
+      { id: uid("review"), label: "Trim any single stock above 10% of brokerage back to 5%.", completed: false },
+      { id: uid("review"), label: "Re-read the HFOS document start to finish.", completed: false },
     ],
   };
 }

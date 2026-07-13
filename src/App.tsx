@@ -115,47 +115,60 @@ function yearsToTarget(current: number, annualInvestment: number, target: number
   return null;
 }
 
+const investedAccountTypes = ["TSP", "Roth IRA", "Brokerage"];
+
+function accountBalance(finance: FinancialData, accountId: string): number {
+  const holdings = finance.holdings.filter((holding) => holding.accountId === accountId);
+  if (holdings.length) return holdings.reduce((sum, holding) => sum + holding.value, 0);
+  return finance.accounts.find((account) => account.id === accountId)?.balance || 0;
+}
+
 function getFinanceSummary(finance: FinancialData) {
+  const assumptions = finance.assumptions;
   const assets = finance.accounts
     .filter((account) => account.type !== "Debt")
-    .reduce((sum, account) => sum + account.balance, 0);
+    .reduce((sum, account) => sum + accountBalance(finance, account.id), 0);
   const debt = finance.accounts
     .filter((account) => account.type === "Debt")
     .reduce((sum, account) => sum + account.balance, 0);
   const netWorth = assets - debt;
-  const invested = finance.holdings.reduce((sum, holding) => sum + holding.value, 0);
+  const invested = finance.accounts
+    .filter((account) => investedAccountTypes.includes(account.type))
+    .reduce((sum, account) => sum + accountBalance(finance, account.id), 0);
   const cash = finance.accounts
     .filter((account) => account.type === "Savings")
     .reduce((sum, account) => sum + account.balance, 0);
-  const fiProgress = finance.assumptions.targetFiNumber
-    ? Math.max(0, Math.min(100, (netWorth / finance.assumptions.targetFiNumber) * 100))
-    : 0;
-  const fiYears = yearsToTarget(
-    netWorth,
-    finance.assumptions.annualInvestment,
-    finance.assumptions.targetFiNumber,
-    finance.assumptions.expectedAnnualReturn,
-  );
 
-  return { assets, debt, netWorth, invested, cash, fiProgress, fiYears };
+  // HFOS v2: FI target = (expenses - pension - Social Security) x 25 when expenses are set.
+  const expenses = assumptions.annualEssentialExpenses || 0;
+  const coveredByIncome = ((assumptions.pensionMonthly || 0) + (assumptions.socialSecurityMonthly || 0)) * 12;
+  const fiTarget = expenses > 0 ? Math.max(0, expenses - coveredByIncome) * 25 : assumptions.targetFiNumber;
+  const efTarget = expenses > 0 ? Math.round(expenses / 2) : assumptions.emergencyFundTarget;
+  const contributions = finance.accounts
+    .filter((account) => investedAccountTypes.includes(account.type))
+    .reduce((sum, account) => sum + (account.annualContribution || 0), 0);
+  const annualInvestment = contributions > 0 ? contributions : assumptions.annualInvestment;
+
+  const fiProgress =
+    fiTarget > 0 ? Math.max(0, Math.min(100, (invested / fiTarget) * 100)) : invested > 0 ? 100 : 0;
+  const fiYears = yearsToTarget(invested, annualInvestment, fiTarget, assumptions.expectedAnnualReturn);
+
+  return { assets, debt, netWorth, invested, cash, fiTarget, efTarget, annualInvestment, fiProgress, fiYears };
 }
 
-function getNextDollarRecommendation(finance: FinancialData): { title: string; detail: string } {
-  const summary = getFinanceSummary(finance);
-  if (summary.cash < finance.assumptions.emergencyFundTarget) {
-    return {
-      title: "Build the emergency fund",
-      detail: `${formatMoney(finance.assumptions.emergencyFundTarget - summary.cash)} remains before extra investing.`,
-    };
-  }
+interface DecisionStep {
+  label: string;
+  state: "done" | "current" | "upcoming";
+}
 
+function getNextDollarRecommendation(finance: FinancialData): {
+  title: string;
+  detail: string;
+  steps: DecisionStep[];
+} {
+  const summary = getFinanceSummary(finance);
   const roth = finance.accounts.find((account) => account.type === "Roth IRA");
-  if (roth?.annualLimit && (roth.annualContribution || 0) < roth.annualLimit) {
-    return {
-      title: "Send the next dollar to Roth IRA",
-      detail: `${formatMoney(roth.annualLimit - (roth.annualContribution || 0))} of contribution room remains.`,
-    };
-  }
+  const rothRoom = roth?.annualLimit ? roth.annualLimit - (roth.annualContribution || 0) : 0;
 
   const brokerage = finance.accounts.find((account) => account.type === "Brokerage");
   const brokerageHoldings = finance.holdings.filter((holding) => holding.accountId === brokerage?.id);
@@ -163,20 +176,65 @@ function getNextDollarRecommendation(finance: FinancialData): { title: string; d
   const schb = brokerageHoldings
     .filter((holding) => holding.category === "SCHB")
     .reduce((sum, holding) => sum + holding.value, 0);
+  const stocks = brokerageHoldings
+    .filter((holding) => holding.category === "Individual Stocks")
+    .reduce((sum, holding) => sum + holding.value, 0);
   const schbPercent = brokerageTotal ? (schb / brokerageTotal) * 100 : 0;
+  const stocksPercent = brokerageTotal ? (stocks / brokerageTotal) * 100 : 0;
 
-  if (!brokerageTotal || schbPercent < 80) {
-    return {
-      title: "Buy SCHB in brokerage",
-      detail: "HFOS default is brokerage at 80% SCHB before adding individual stocks.",
-    };
+  let currentStep: number;
+  let title: string;
+  let detail: string;
+
+  if (finance.assumptions.tspMatchCaptured === false) {
+    currentStep = 0;
+    title = "Raise TSP to at least 5%";
+    detail = "The match is an immediate 100% return. Fix this before anything else.";
+  } else if (summary.cash < summary.efTarget) {
+    currentStep = 1;
+    title = "Build the emergency fund";
+    detail = `${formatMoney(summary.efTarget - summary.cash)} remains before extra investing.`;
+  } else if (rothRoom > 0) {
+    currentStep = 2;
+    title = "Send the next dollar to Roth IRA";
+    detail = `${formatMoney(rothRoom)} of contribution room remains. Buy SCHB.`;
+  } else if (!brokerageTotal || schbPercent < 80) {
+    currentStep = 3;
+    title = "Buy SCHB in brokerage";
+    detail = brokerageTotal
+      ? `SCHB is ${formatPercent(schbPercent)} of brokerage; target is 80% before individual stocks.`
+      : "Brokerage is the default home for extra dollars. Start with SCHB.";
+  } else if (stocksPercent >= 20) {
+    currentStep = 3;
+    title = "Individual stocks at the 20% cap - buy SCHB";
+    detail = `Stocks are ${formatPercent(stocksPercent)} of brokerage. New dollars go to SCHB until back under 20%.`;
+  } else {
+    currentStep = 3;
+    title = "Buy SCHB or an approved stock";
+    detail = "Stocks stay under 20% of brokerage and 5% per company at purchase. When in doubt, buy SCHB.";
   }
 
-  return {
-    title: "Brokerage is ready for the approved list",
-    detail: "Individual stocks stay capped at 20% overall and 5% for any one company.",
-  };
+  const labels = [
+    "TSP at 5%+ (full match)",
+    "Emergency fund at target",
+    "Max Roth IRA",
+    "Brokerage: SCHB, then approved stocks",
+  ];
+  const steps: DecisionStep[] = labels.map((label, index) => ({
+    label,
+    state: index < currentStep ? "done" : index === currentStep ? "current" : "upcoming",
+  }));
+
+  return { title, detail, steps };
 }
+
+const hfosMilestones: { amount: number; action: string }[] = [
+  { amount: 100000, action: "Stay the course." },
+  { amount: 250000, action: "Review allocation. Revisit brokerage-vs-max-TSP decision." },
+  { amount: 500000, action: "Review tax and estate planning." },
+  { amount: 1000000, action: "Evaluate work optionality." },
+  { amount: 2000000, action: "Reassess long-term lifestyle goals." },
+];
 
 function Field({
   label,
@@ -1346,11 +1404,14 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
   const finance = data.finance;
   const summary = getFinanceSummary(finance);
   const recommendation = getNextDollarRecommendation(finance);
-  const allocation = finance.holdings.reduce<Record<string, number>>((result, holding) => {
-    result[holding.category] = (result[holding.category] || 0) + holding.value;
-    return result;
-  }, {});
-  const allocationRows = Object.entries(allocation).sort((a, b) => b[1] - a[1]);
+  const [windfallAmount, setWindfallAmount] = useState(0);
+  const [raiseAmount, setRaiseAmount] = useState(0);
+  const annualChecklist = finance.annualChecklist || [];
+  const nextMilestone = hfosMilestones.find((milestone) => summary.invested < milestone.amount);
+  const expensesSet = (finance.assumptions.annualEssentialExpenses || 0) > 0;
+  const accountAdds = finance.accounts
+    .filter((account) => investedAccountTypes.includes(account.type))
+    .reduce((sum, account) => sum + (account.annualContribution || 0), 0);
   const reviewProgress = finance.quarterlyChecklist.length
     ? (finance.quarterlyChecklist.filter((item) => item.completed).length /
         finance.quarterlyChecklist.length) *
@@ -1386,10 +1447,14 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
     }));
   }
 
-  function toggleReviewItem(id: string, completed: boolean) {
+  function toggleReviewItem(
+    list: "quarterlyChecklist" | "annualChecklist",
+    id: string,
+    completed: boolean,
+  ) {
     updateFinance((current) => ({
       ...current,
-      quarterlyChecklist: current.quarterlyChecklist.map((item) =>
+      [list]: (current[list] || []).map((item) =>
         item.id === id ? { ...item, completed } : item,
       ),
     }));
@@ -1404,7 +1469,7 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
       title: `Quarterly Financial Review - ${formatDate(todayKey())}`,
       type: "Custom",
       intendedOutcome: finance.mission,
-      actualOutcome: `Net worth: ${formatMoney(summary.netWorth)}. FI progress: ${formatPercent(summary.fiProgress)}.`,
+      actualOutcome: `Invested: ${formatMoney(summary.invested)}. Net worth: ${formatMoney(summary.netWorth)}. FI progress: ${formatPercent(summary.fiProgress)}.`,
       sustain: finance.principles.join("\n"),
       improve: incomplete || "Checklist complete. Maintain the system.",
       nextAction: recommendation.title,
@@ -1447,7 +1512,7 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
           <p className="label">Invested</p>
           <p className="text-2xl font-black">{formatMoney(summary.invested)}</p>
           <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
-            Across TSP, IRA, and brokerage holdings
+            TSP + IRA + brokerage. This drives FI progress.
           </p>
         </div>
         <div className="card">
@@ -1460,7 +1525,8 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
             />
           </div>
           <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-            Target {formatMoney(finance.assumptions.targetFiNumber)}
+            Target {formatMoney(summary.fiTarget)}
+            {expensesSet ? " (from expenses)" : ""}
           </p>
         </div>
         <div className="card">
@@ -1469,7 +1535,7 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
             {summary.fiYears === null ? "Set plan" : summary.fiYears === 0 ? "Reached" : `${summary.fiYears} yrs`}
           </p>
           <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
-            Based on {formatMoney(finance.assumptions.annualInvestment)} yearly at{" "}
+            Based on {formatMoney(summary.annualInvestment)} yearly at{" "}
             {formatPercent(finance.assumptions.expectedAnnualReturn * 100)}
           </p>
         </div>
@@ -1478,7 +1544,7 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
       <section className="card border-signal-500/40 bg-signal-50/60 dark:bg-signal-500/10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <p className="label">One-click investment recommendation</p>
+            <p className="label">Next dollar goes here</p>
             <h3 className="text-xl font-bold">{recommendation.title}</h3>
             <p className="mt-2 text-sm text-ink-700 dark:text-ink-200">{recommendation.detail}</p>
           </div>
@@ -1486,124 +1552,224 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
             Make Task
           </button>
         </div>
+        <ol className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {recommendation.steps.map((step, index) => (
+            <li
+              key={step.label}
+              className={`panel flex items-center gap-2 p-2 text-sm ${
+                step.state === "current"
+                  ? "border-signal-500 font-bold"
+                  : step.state === "done"
+                    ? "opacity-60"
+                    : "opacity-40"
+              }`}
+            >
+              <span
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                  step.state === "done"
+                    ? "bg-signal-600 text-white"
+                    : step.state === "current"
+                      ? "border-2 border-signal-600 text-signal-600"
+                      : "bg-ink-100 text-ink-500 dark:bg-ink-800 dark:text-ink-300"
+                }`}
+              >
+                {step.state === "done" ? "✓" : index + 1}
+              </span>
+              {step.label}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div className="card space-y-3">
+          <h3 className="text-xl font-bold">Stay the Path</h3>
+          <div className="space-y-2 text-sm text-ink-700 dark:text-ink-200">
+            <p className="panel p-2"><strong>Down 10% or 20%</strong> → Keep buying.</p>
+            <p className="panel p-2"><strong>Down 40%</strong> → Keep buying if the emergency fund and cash flow are healthy.</p>
+            <p className="panel p-2"><strong>Down 50%+</strong> → Keep buying if able. Change nothing for 30 days.</p>
+            <p className="panel p-2 font-bold">Never panic sell. This card is why the system exists.</p>
+          </div>
+          <p className="text-sm text-ink-600 dark:text-ink-300">
+            <strong>Sell only if:</strong> the thesis broke, the money is genuinely needed, or
+            contributions cannot rebalance within a year.
+          </p>
+          <p className="text-sm text-ink-600 dark:text-ink-300">
+            <strong>Unsure?</strong> Wait 24 hours → re-read the HFOS → buy SCHB.
+          </p>
+        </div>
+
+        <div className="card space-y-3">
+          <h3 className="text-xl font-bold">Windfall & Raise Rules</h3>
+          <Field label="Windfall received">
+            <input
+              className="input"
+              type="number"
+              value={windfallAmount || ""}
+              placeholder="0"
+              onChange={(event) => setWindfallAmount(Number(event.target.value))}
+            />
+          </Field>
+          {windfallAmount > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold">
+                Enjoy {formatMoney(windfallAmount * 0.2)} · Invest {formatMoney(windfallAmount * 0.8)}
+              </p>
+              <button
+                className="btn-secondary"
+                onClick={() =>
+                  addOpenLoop({
+                    title: `Invest ${formatMoney(windfallAmount * 0.8)} of windfall (80/20 rule)`,
+                    status: "Next Action",
+                    priority: "High",
+                    notes: `Windfall of ${formatMoney(windfallAmount)}: enjoy ${formatMoney(windfallAmount * 0.2)}, invest ${formatMoney(windfallAmount * 0.8)} per the decision tree.`,
+                  })
+                }
+              >
+                Make Task
+              </button>
+            </div>
+          ) : null}
+          <Field label="Annual raise amount">
+            <input
+              className="input"
+              type="number"
+              value={raiseAmount || ""}
+              placeholder="0"
+              onChange={(event) => setRaiseAmount(Number(event.target.value))}
+            />
+          </Field>
+          {raiseAmount > 0 ? (
+            <p className="text-sm font-semibold">
+              Increase investing by {formatMoney(raiseAmount * 0.5)}/yr · Lifestyle {formatMoney(raiseAmount * 0.5)}/yr
+            </p>
+          ) : null}
+        </div>
       </section>
 
       <section className="card space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 className="text-xl font-bold">Accounts</h3>
-            <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
-              Update balances monthly or during your quarterly review.
-            </p>
-          </div>
+        <div>
+          <h3 className="text-xl font-bold">Accounts & Holdings</h3>
+          <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+            Update holding values quarterly. Account balances and totals compute themselves.
+          </p>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
-          {finance.accounts.map((account) => (
-            <article key={account.id} className="panel p-3">
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="font-bold">{account.name}</p>
-                  <p className="text-sm text-ink-600 dark:text-ink-300">{account.targetRole}</p>
+          {finance.accounts.map((account) => {
+            const holdings = finance.holdings.filter((holding) => holding.accountId === account.id);
+            const balance = accountBalance(finance, account.id);
+            const isInvested = investedAccountTypes.includes(account.type);
+            return (
+              <article key={account.id} className="panel p-3">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-bold">{account.name}</p>
+                    <p className="text-sm text-ink-600 dark:text-ink-300">{account.targetRole}</p>
+                  </div>
+                  <p className="text-lg font-black">{formatMoney(balance)}</p>
                 </div>
-                <span className="badge">{account.type}</span>
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <Field label={account.type === "Debt" ? "Debt balance" : "Balance"}>
-                  <input
-                    className="input"
-                    type="number"
-                    value={account.balance}
-                    onChange={(event) => patchAccount(account.id, { balance: Number(event.target.value) })}
-                  />
-                </Field>
-                <Field label="Annual add">
-                  <input
-                    className="input"
-                    type="number"
-                    value={account.annualContribution || 0}
-                    onChange={(event) =>
-                      patchAccount(account.id, { annualContribution: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label="Annual limit">
-                  <input
-                    className="input"
-                    type="number"
-                    value={account.annualLimit || 0}
-                    onChange={(event) => patchAccount(account.id, { annualLimit: Number(event.target.value) })}
-                  />
-                </Field>
-              </div>
-            </article>
-          ))}
+                {holdings.length ? (
+                  <div className="mt-3 space-y-2">
+                    {holdings.map((holding) => {
+                      const actual = balance > 0 ? (holding.value / balance) * 100 : 0;
+                      const target = holding.targetPercent || 0;
+                      const outsideBand = balance > 0 && Math.abs(actual - target) > 5;
+                      return (
+                        <div key={holding.id} className="grid items-center gap-2 sm:grid-cols-[1fr_auto_auto]">
+                          <span className="text-sm font-semibold">{holding.name}</span>
+                          <input
+                            className="input w-32"
+                            type="number"
+                            value={holding.value}
+                            onChange={(event) =>
+                              patchHolding(holding.id, { value: Number(event.target.value) })
+                            }
+                          />
+                          <span
+                            className={`text-sm ${
+                              outsideBand
+                                ? "font-bold text-coral-700 dark:text-coral-500"
+                                : "text-ink-600 dark:text-ink-300"
+                            }`}
+                          >
+                            {formatPercent(actual)} vs {target}%
+                            {outsideBand ? " — rebalance with new dollars" : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <Field label={account.type === "Debt" ? "Debt balance" : "Balance"}>
+                      <input
+                        className="input"
+                        type="number"
+                        value={account.balance}
+                        onChange={(event) =>
+                          patchAccount(account.id, { balance: Number(event.target.value) })
+                        }
+                      />
+                    </Field>
+                  </div>
+                )}
+                {isInvested ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Field label="Added this year">
+                      <input
+                        className="input"
+                        type="number"
+                        value={account.annualContribution || 0}
+                        onChange={(event) =>
+                          patchAccount(account.id, { annualContribution: Number(event.target.value) })
+                        }
+                      />
+                    </Field>
+                    {account.type === "TSP" || account.type === "Roth IRA" ? (
+                      <Field label="Annual limit">
+                        <input
+                          className="input"
+                          type="number"
+                          value={account.annualLimit || 0}
+                          onChange={(event) =>
+                            patchAccount(account.id, { annualLimit: Number(event.target.value) })
+                          }
+                        />
+                      </Field>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="card space-y-3">
-          <h3 className="text-xl font-bold">Allocation Across All Accounts</h3>
-          {allocationRows.map(([category, value]) => {
-            const percent = summary.invested ? (value / summary.invested) * 100 : 0;
+      <section className="card space-y-2">
+        <h3 className="text-xl font-bold">Milestones</h3>
+        <p className="text-sm text-ink-600 dark:text-ink-300">Measured in invested assets.</p>
+        <div className="space-y-2">
+          {hfosMilestones.map((milestone) => {
+            const reached = summary.invested >= milestone.amount;
+            const isNext = nextMilestone?.amount === milestone.amount;
             return (
-              <div key={category}>
-                <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                  <span className="font-semibold">{category}</span>
-                  <span className="text-ink-600 dark:text-ink-300">
-                    {formatMoney(value)} / {formatPercent(percent)}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-ink-100 dark:bg-ink-800">
-                  <div
-                    className="h-2 rounded-full bg-coral-500"
-                    style={{ width: `${Math.max(2, Math.min(100, percent))}%` }}
-                  />
-                </div>
+              <div
+                key={milestone.amount}
+                className={`panel flex flex-wrap items-center justify-between gap-2 p-3 text-sm ${
+                  isNext ? "border-signal-500" : reached ? "opacity-60" : "opacity-40"
+                }`}
+              >
+                <span className="font-bold">
+                  {reached ? "✓ " : ""}
+                  {formatMoney(milestone.amount)}
+                </span>
+                <span className="text-ink-700 dark:text-ink-200">{milestone.action}</span>
+                {isNext ? (
+                  <span className="badge">{formatMoney(milestone.amount - summary.invested)} to go</span>
+                ) : null}
               </div>
             );
           })}
-          {!allocationRows.length ? (
-            <EmptyState title="No holdings yet" text="Add values to holdings to see allocation." />
-          ) : null}
-        </div>
-
-        <div className="card space-y-3">
-          <h3 className="text-xl font-bold">Holdings Tracker</h3>
-          <div className="grid gap-3">
-            {finance.holdings.map((holding) => (
-              <article key={holding.id} className="panel p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-bold">{holding.name}</p>
-                    <p className="text-sm text-ink-600 dark:text-ink-300">
-                      {holding.symbol} / target {holding.targetPercent || 0}%
-                    </p>
-                  </div>
-                  <span className="badge">{holding.category}</span>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Value">
-                    <input
-                      className="input"
-                      type="number"
-                      value={holding.value}
-                      onChange={(event) => patchHolding(holding.id, { value: Number(event.target.value) })}
-                    />
-                  </Field>
-                  <Field label="Target percent">
-                    <input
-                      className="input"
-                      type="number"
-                      value={holding.targetPercent || 0}
-                      onChange={(event) =>
-                        patchHolding(holding.id, { targetPercent: Number(event.target.value) })
-                      }
-                    />
-                  </Field>
-                </div>
-              </article>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -1611,20 +1777,14 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
         <div className="card space-y-3">
           <h3 className="text-xl font-bold">Retirement and FI Assumptions</h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="FI target">
+            <Field label="Annual essential expenses">
               <input
                 className="input"
                 type="number"
-                value={finance.assumptions.targetFiNumber}
-                onChange={(event) => patchAssumption("targetFiNumber", Number(event.target.value))}
-              />
-            </Field>
-            <Field label="Annual investment">
-              <input
-                className="input"
-                type="number"
-                value={finance.assumptions.annualInvestment}
-                onChange={(event) => patchAssumption("annualInvestment", Number(event.target.value))}
+                value={finance.assumptions.annualEssentialExpenses || 0}
+                onChange={(event) =>
+                  patchAssumption("annualEssentialExpenses", Number(event.target.value))
+                }
               />
             </Field>
             <Field label="Expected return %">
@@ -1635,14 +1795,6 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
                 onChange={(event) =>
                   patchAssumption("expectedAnnualReturn", Number(event.target.value) / 100)
                 }
-              />
-            </Field>
-            <Field label="Emergency target">
-              <input
-                className="input"
-                type="number"
-                value={finance.assumptions.emergencyFundTarget}
-                onChange={(event) => patchAssumption("emergencyFundTarget", Number(event.target.value))}
               />
             </Field>
             <Field label="Pension monthly">
@@ -1661,7 +1813,61 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
                 onChange={(event) => patchAssumption("socialSecurityMonthly", Number(event.target.value))}
               />
             </Field>
+            {!expensesSet ? (
+              <Field label="FI target (manual)">
+                <input
+                  className="input"
+                  type="number"
+                  value={finance.assumptions.targetFiNumber}
+                  onChange={(event) => patchAssumption("targetFiNumber", Number(event.target.value))}
+                />
+              </Field>
+            ) : null}
+            {!expensesSet ? (
+              <Field label="Emergency target (manual)">
+                <input
+                  className="input"
+                  type="number"
+                  value={finance.assumptions.emergencyFundTarget}
+                  onChange={(event) => patchAssumption("emergencyFundTarget", Number(event.target.value))}
+                />
+              </Field>
+            ) : null}
+            {accountAdds <= 0 ? (
+              <Field label="Annual investment (manual)">
+                <input
+                  className="input"
+                  type="number"
+                  value={finance.assumptions.annualInvestment}
+                  onChange={(event) => patchAssumption("annualInvestment", Number(event.target.value))}
+                />
+              </Field>
+            ) : null}
           </div>
+          <label className="panel flex items-start gap-3 p-3">
+            <input
+              type="checkbox"
+              className="mt-1 h-5 w-5 accent-signal-600"
+              checked={finance.assumptions.tspMatchCaptured !== false}
+              onChange={(event) =>
+                updateFinance((current) => ({
+                  ...current,
+                  assumptions: { ...current.assumptions, tspMatchCaptured: event.target.checked },
+                }))
+              }
+            />
+            <span className="text-sm font-semibold">
+              TSP is getting at least 5% (full match captured)
+            </span>
+          </label>
+          <p className="text-sm text-ink-600 dark:text-ink-300">
+            In use: FI target <strong>{formatMoney(summary.fiTarget)}</strong>
+            {expensesSet ? " = (expenses − pension − SS) × 25" : " (manual)"} · Emergency
+            target <strong>{formatMoney(summary.efTarget)}</strong>
+            {expensesSet ? " = 6 months of expenses" : " (manual)"} · Investing{" "}
+            <strong>{formatMoney(summary.annualInvestment)}/yr</strong>
+            {accountAdds > 0 ? " from account adds" : " (manual)"}
+          </p>
         </div>
 
         <div className="card space-y-3">
@@ -1681,7 +1887,7 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
                   type="checkbox"
                   className="mt-1 h-5 w-5 accent-signal-600"
                   checked={item.completed}
-                  onChange={(event) => toggleReviewItem(item.id, event.target.checked)}
+                  onChange={(event) => toggleReviewItem("quarterlyChecklist", item.id, event.target.checked)}
                 />
                 <span className="text-sm font-semibold">{item.label}</span>
               </label>
@@ -1690,6 +1896,9 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
           <div className="flex flex-wrap gap-2">
             <button className="btn-primary" onClick={createFinanceAar}>
               Save Review AAR
+            </button>
+            <button className="btn-secondary" onClick={() => exportDataJson(data)}>
+              Export Backup
             </button>
             <button
               className="btn-secondary"
@@ -1705,6 +1914,41 @@ function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
               Reset Checklist
             </button>
           </div>
+        </div>
+
+        <div className="card space-y-3">
+          <div>
+            <h3 className="text-xl font-bold">Annual Review</h3>
+            <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+              Once a year, on top of the quarterly review.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {annualChecklist.map((item) => (
+              <label key={item.id} className="panel flex items-start gap-3 p-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5 accent-signal-600"
+                  checked={item.completed}
+                  onChange={(event) => toggleReviewItem("annualChecklist", item.id, event.target.checked)}
+                />
+                <span className="text-sm font-semibold">{item.label}</span>
+              </label>
+            ))}
+          </div>
+          <button
+            className="btn-secondary"
+            onClick={() =>
+              patchFinance({
+                annualChecklist: annualChecklist.map((item) => ({
+                  ...item,
+                  completed: false,
+                })),
+              })
+            }
+          >
+            Reset Annual Checklist
+          </button>
         </div>
       </section>
 
