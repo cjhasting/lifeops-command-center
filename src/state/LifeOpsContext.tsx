@@ -20,6 +20,7 @@ import type {
   LessonLearned,
   OpenLoop,
   Project,
+  FinancialData,
 } from "../types";
 import { nowIso, todayKey, uid } from "../utils/date";
 
@@ -39,6 +40,7 @@ interface LifeOpsContextValue {
   replaceData: (next: AppData) => void;
   resetData: () => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  updateFinance: (updater: (finance: FinancialData) => FinancialData) => void;
   upsertMission: (mission: Partial<DailyMission>) => DailyMission;
   addOpenLoop: (loop: Partial<OpenLoop> & Pick<OpenLoop, "title">) => OpenLoop;
   updateOpenLoop: (id: string, patch: Partial<OpenLoop>) => void;
@@ -66,13 +68,34 @@ function withTimestamp<T extends { updatedAt?: string }>(item: T): T {
   return { ...item, updatedAt: nowIso() };
 }
 
+function normalizeData(snapshot?: AppData | null): AppData {
+  const seed = createSeedData();
+  if (!snapshot) return seed;
+
+  return {
+    ...seed,
+    ...snapshot,
+    version: Math.max(snapshot.version || 1, seed.version),
+    categories: snapshot.categories || seed.categories,
+    missions: snapshot.missions || seed.missions,
+    openLoops: snapshot.openLoops || seed.openLoops,
+    projects: snapshot.projects || seed.projects,
+    aarReviews: snapshot.aarReviews || seed.aarReviews,
+    lessons: snapshot.lessons || seed.lessons,
+    habits: snapshot.habits || seed.habits,
+    avoidanceCheckIns: snapshot.avoidanceCheckIns || seed.avoidanceCheckIns,
+    finance: snapshot.finance || seed.finance,
+    settings: { ...seed.settings, ...(snapshot.settings || {}) },
+  };
+}
+
 export function LifeOpsProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => createSeedData());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     loadSnapshot().then((snapshot) => {
-      setData(snapshot || createSeedData());
+      setData(normalizeData(snapshot));
       setReady(true);
     });
   }, []);
@@ -93,7 +116,7 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const replaceData = useCallback((next: AppData) => {
-    setData(next);
+    setData(normalizeData(next));
   }, []);
 
   const resetData = useCallback(async () => {
@@ -106,6 +129,16 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       mutate((current) => ({
         ...current,
         settings: { ...current.settings, ...patch },
+      }));
+    },
+    [mutate],
+  );
+
+  const updateFinance = useCallback(
+    (updater: (finance: FinancialData) => FinancialData) => {
+      mutate((current) => ({
+        ...current,
+        finance: updater(current.finance),
       }));
     },
     [mutate],
@@ -387,6 +420,7 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       replaceData,
       resetData,
       updateSettings,
+      updateFinance,
       upsertMission,
       addOpenLoop,
       updateOpenLoop,
@@ -418,6 +452,7 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       resetData,
       updateAAR,
       updateCategory,
+      updateFinance,
       updateHabit,
       updateLesson,
       updateOpenLoop,

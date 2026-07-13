@@ -6,6 +6,7 @@ import type {
   AvoidanceCheckIn,
   Category,
   DailyMission,
+  FinancialData,
   Habit,
   LessonLearned,
   OpenLoop,
@@ -41,6 +42,7 @@ const pages: { key: PageKey; label: string }[] = [
   { key: "projects", label: "Projects" },
   { key: "aars", label: "AAR Reviews" },
   { key: "lessons", label: "Lessons" },
+  { key: "finance", label: "Finance" },
   { key: "settings", label: "Settings" },
 ];
 
@@ -76,6 +78,104 @@ function textList(value: string): string[] {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+function mobileNavLabel(page: PageKey): string {
+  return {
+    dashboard: "Home",
+    loops: "Loops",
+    projects: "Projects",
+    aars: "Reviews",
+    lessons: "Lessons",
+    finance: "Money",
+    settings: "Settings",
+  }[page];
+}
+
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function yearsToTarget(current: number, annualInvestment: number, target: number, returnRate: number): number | null {
+  if (current >= target) return 0;
+  if (annualInvestment <= 0 && returnRate <= 0) return null;
+  let projected = Math.max(0, current);
+  for (let year = 1; year <= 80; year += 1) {
+    projected = projected * (1 + Math.max(0, returnRate)) + annualInvestment;
+    if (projected >= target) return year;
+  }
+  return null;
+}
+
+function getFinanceSummary(finance: FinancialData) {
+  const assets = finance.accounts
+    .filter((account) => account.type !== "Debt")
+    .reduce((sum, account) => sum + account.balance, 0);
+  const debt = finance.accounts
+    .filter((account) => account.type === "Debt")
+    .reduce((sum, account) => sum + account.balance, 0);
+  const netWorth = assets - debt;
+  const invested = finance.holdings.reduce((sum, holding) => sum + holding.value, 0);
+  const cash = finance.accounts
+    .filter((account) => account.type === "Savings")
+    .reduce((sum, account) => sum + account.balance, 0);
+  const fiProgress = finance.assumptions.targetFiNumber
+    ? Math.max(0, Math.min(100, (netWorth / finance.assumptions.targetFiNumber) * 100))
+    : 0;
+  const fiYears = yearsToTarget(
+    netWorth,
+    finance.assumptions.annualInvestment,
+    finance.assumptions.targetFiNumber,
+    finance.assumptions.expectedAnnualReturn,
+  );
+
+  return { assets, debt, netWorth, invested, cash, fiProgress, fiYears };
+}
+
+function getNextDollarRecommendation(finance: FinancialData): { title: string; detail: string } {
+  const summary = getFinanceSummary(finance);
+  if (summary.cash < finance.assumptions.emergencyFundTarget) {
+    return {
+      title: "Build the emergency fund",
+      detail: `${formatMoney(finance.assumptions.emergencyFundTarget - summary.cash)} remains before extra investing.`,
+    };
+  }
+
+  const roth = finance.accounts.find((account) => account.type === "Roth IRA");
+  if (roth?.annualLimit && (roth.annualContribution || 0) < roth.annualLimit) {
+    return {
+      title: "Send the next dollar to Roth IRA",
+      detail: `${formatMoney(roth.annualLimit - (roth.annualContribution || 0))} of contribution room remains.`,
+    };
+  }
+
+  const brokerage = finance.accounts.find((account) => account.type === "Brokerage");
+  const brokerageHoldings = finance.holdings.filter((holding) => holding.accountId === brokerage?.id);
+  const brokerageTotal = brokerageHoldings.reduce((sum, holding) => sum + holding.value, 0);
+  const schb = brokerageHoldings
+    .filter((holding) => holding.category === "SCHB")
+    .reduce((sum, holding) => sum + holding.value, 0);
+  const schbPercent = brokerageTotal ? (schb / brokerageTotal) * 100 : 0;
+
+  if (!brokerageTotal || schbPercent < 80) {
+    return {
+      title: "Buy SCHB in brokerage",
+      detail: "HFOS default is brokerage at 80% SCHB before adding individual stocks.",
+    };
+  }
+
+  return {
+    title: "Brokerage is ready for the approved list",
+    detail: "Individual stocks stay capped at 20% overall and 5% for any one company.",
+  };
 }
 
 function Field({
@@ -218,7 +318,7 @@ function Layout({
         +
       </button>
 
-      <nav className="no-print fixed bottom-0 left-0 right-0 z-30 grid min-w-0 grid-cols-6 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-950 lg:hidden">
+      <nav className="no-print fixed bottom-0 left-0 right-0 z-30 grid min-w-0 grid-cols-7 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-950 lg:hidden">
         {pages.map((item) => (
           <button
             key={item.key}
@@ -229,7 +329,7 @@ function Layout({
             }`}
             onClick={() => setPage(item.key)}
           >
-            {item.label.replace("Open ", "").replace("AAR ", "")}
+            {mobileNavLabel(item.key)}
           </button>
         ))}
       </nav>
@@ -368,6 +468,8 @@ function Dashboard({
   const activeProjects = data.projects.filter((project) => project.status !== "Archived");
   const activeLesson = data.lessons.find((lesson) => lesson.status === "Active");
   const habits = data.habits.filter((habit) => habit.active);
+  const financeSummary = getFinanceSummary(data.finance);
+  const financeRecommendation = getNextDollarRecommendation(data.finance);
 
   function endDayAAR() {
     addAAR({
@@ -464,7 +566,7 @@ function Dashboard({
         </section>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-4">
         <section className="card">
           <h2 className="text-xl font-bold">Minimum Viable Day</h2>
           <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
@@ -482,6 +584,26 @@ function Dashboard({
           </p>
           <button className="btn-secondary mt-4 w-full" onClick={() => setAvoidOpen(true)}>
             Quick Check-In
+          </button>
+        </section>
+
+        <section className="card">
+          <h2 className="text-xl font-bold">Financial Command</h2>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-md bg-ink-50 p-3 dark:bg-ink-950">
+              <p className="label">Net Worth</p>
+              <p className="font-bold">{formatMoney(financeSummary.netWorth)}</p>
+            </div>
+            <div className="rounded-md bg-ink-50 p-3 dark:bg-ink-950">
+              <p className="label">FI</p>
+              <p className="font-bold">{formatPercent(financeSummary.fiProgress)}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-ink-600 dark:text-ink-300">
+            {financeRecommendation.title}
+          </p>
+          <button className="btn-primary mt-4 w-full" onClick={() => setPage("finance")}>
+            Open Money
           </button>
         </section>
 
@@ -1219,6 +1341,397 @@ function LessonModal({
   );
 }
 
+function FinancePage({ setPage }: { setPage: (page: PageKey) => void }) {
+  const { data, updateFinance, addAAR, addOpenLoop } = useLifeOps();
+  const finance = data.finance;
+  const summary = getFinanceSummary(finance);
+  const recommendation = getNextDollarRecommendation(finance);
+  const allocation = finance.holdings.reduce<Record<string, number>>((result, holding) => {
+    result[holding.category] = (result[holding.category] || 0) + holding.value;
+    return result;
+  }, {});
+  const allocationRows = Object.entries(allocation).sort((a, b) => b[1] - a[1]);
+  const reviewProgress = finance.quarterlyChecklist.length
+    ? (finance.quarterlyChecklist.filter((item) => item.completed).length /
+        finance.quarterlyChecklist.length) *
+      100
+    : 0;
+
+  function patchFinance(patch: Partial<FinancialData>) {
+    updateFinance((current) => ({ ...current, ...patch }));
+  }
+
+  function patchAccount(id: string, patch: Partial<(typeof finance.accounts)[number]>) {
+    updateFinance((current) => ({
+      ...current,
+      accounts: current.accounts.map((account) =>
+        account.id === id ? { ...account, ...patch, updatedAt: new Date().toISOString() } : account,
+      ),
+    }));
+  }
+
+  function patchHolding(id: string, patch: Partial<(typeof finance.holdings)[number]>) {
+    updateFinance((current) => ({
+      ...current,
+      holdings: current.holdings.map((holding) =>
+        holding.id === id ? { ...holding, ...patch, updatedAt: new Date().toISOString() } : holding,
+      ),
+    }));
+  }
+
+  function patchAssumption(key: keyof FinancialData["assumptions"], value: number | undefined) {
+    updateFinance((current) => ({
+      ...current,
+      assumptions: { ...current.assumptions, [key]: value },
+    }));
+  }
+
+  function toggleReviewItem(id: string, completed: boolean) {
+    updateFinance((current) => ({
+      ...current,
+      quarterlyChecklist: current.quarterlyChecklist.map((item) =>
+        item.id === id ? { ...item, completed } : item,
+      ),
+    }));
+  }
+
+  function createFinanceAar() {
+    const incomplete = finance.quarterlyChecklist
+      .filter((item) => !item.completed)
+      .map((item) => item.label)
+      .join("\n");
+    addAAR({
+      title: `Quarterly Financial Review - ${formatDate(todayKey())}`,
+      type: "Custom",
+      intendedOutcome: finance.mission,
+      actualOutcome: `Net worth: ${formatMoney(summary.netWorth)}. FI progress: ${formatPercent(summary.fiProgress)}.`,
+      sustain: finance.principles.join("\n"),
+      improve: incomplete || "Checklist complete. Maintain the system.",
+      nextAction: recommendation.title,
+      tags: ["finance", "HFOS"],
+    });
+    setPage("aars");
+  }
+
+  function createNextDollarLoop() {
+    addOpenLoop({
+      title: recommendation.title,
+      status: "Next Action",
+      priority: "High",
+      notes: recommendation.detail,
+    });
+    setPage("loops");
+  }
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Financial Command Center"
+        subtitle={finance.mission}
+        action={
+          <button className="btn-primary" onClick={createFinanceAar}>
+            Create Finance AAR
+          </button>
+        }
+      />
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="card">
+          <p className="label">Net Worth</p>
+          <p className="text-2xl font-black">{formatMoney(summary.netWorth)}</p>
+          <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+            Assets {formatMoney(summary.assets)} minus debt {formatMoney(summary.debt)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="label">Invested</p>
+          <p className="text-2xl font-black">{formatMoney(summary.invested)}</p>
+          <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+            Across TSP, IRA, and brokerage holdings
+          </p>
+        </div>
+        <div className="card">
+          <p className="label">FI Progress</p>
+          <p className="text-2xl font-black">{formatPercent(summary.fiProgress)}</p>
+          <div className="mt-3 h-2 rounded-full bg-ink-100 dark:bg-ink-800">
+            <div
+              className="h-2 rounded-full bg-signal-600"
+              style={{ width: `${Math.max(2, Math.min(100, summary.fiProgress))}%` }}
+            />
+          </div>
+          <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
+            Target {formatMoney(finance.assumptions.targetFiNumber)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="label">FI Countdown</p>
+          <p className="text-2xl font-black">
+            {summary.fiYears === null ? "Set plan" : summary.fiYears === 0 ? "Reached" : `${summary.fiYears} yrs`}
+          </p>
+          <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+            Based on {formatMoney(finance.assumptions.annualInvestment)} yearly at{" "}
+            {formatPercent(finance.assumptions.expectedAnnualReturn * 100)}
+          </p>
+        </div>
+      </section>
+
+      <section className="card border-signal-500/40 bg-signal-50/60 dark:bg-signal-500/10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="label">One-click investment recommendation</p>
+            <h3 className="text-xl font-bold">{recommendation.title}</h3>
+            <p className="mt-2 text-sm text-ink-700 dark:text-ink-200">{recommendation.detail}</p>
+          </div>
+          <button className="btn-primary" onClick={createNextDollarLoop}>
+            Make Task
+          </button>
+        </div>
+      </section>
+
+      <section className="card space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-xl font-bold">Accounts</h3>
+            <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+              Update balances monthly or during your quarterly review.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {finance.accounts.map((account) => (
+            <article key={account.id} className="panel p-3">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="font-bold">{account.name}</p>
+                  <p className="text-sm text-ink-600 dark:text-ink-300">{account.targetRole}</p>
+                </div>
+                <span className="badge">{account.type}</span>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <Field label={account.type === "Debt" ? "Debt balance" : "Balance"}>
+                  <input
+                    className="input"
+                    type="number"
+                    value={account.balance}
+                    onChange={(event) => patchAccount(account.id, { balance: Number(event.target.value) })}
+                  />
+                </Field>
+                <Field label="Annual add">
+                  <input
+                    className="input"
+                    type="number"
+                    value={account.annualContribution || 0}
+                    onChange={(event) =>
+                      patchAccount(account.id, { annualContribution: Number(event.target.value) })
+                    }
+                  />
+                </Field>
+                <Field label="Annual limit">
+                  <input
+                    className="input"
+                    type="number"
+                    value={account.annualLimit || 0}
+                    onChange={(event) => patchAccount(account.id, { annualLimit: Number(event.target.value) })}
+                  />
+                </Field>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="card space-y-3">
+          <h3 className="text-xl font-bold">Allocation Across All Accounts</h3>
+          {allocationRows.map(([category, value]) => {
+            const percent = summary.invested ? (value / summary.invested) * 100 : 0;
+            return (
+              <div key={category}>
+                <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                  <span className="font-semibold">{category}</span>
+                  <span className="text-ink-600 dark:text-ink-300">
+                    {formatMoney(value)} / {formatPercent(percent)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-ink-100 dark:bg-ink-800">
+                  <div
+                    className="h-2 rounded-full bg-coral-500"
+                    style={{ width: `${Math.max(2, Math.min(100, percent))}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {!allocationRows.length ? (
+            <EmptyState title="No holdings yet" text="Add values to holdings to see allocation." />
+          ) : null}
+        </div>
+
+        <div className="card space-y-3">
+          <h3 className="text-xl font-bold">Holdings Tracker</h3>
+          <div className="grid gap-3">
+            {finance.holdings.map((holding) => (
+              <article key={holding.id} className="panel p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold">{holding.name}</p>
+                    <p className="text-sm text-ink-600 dark:text-ink-300">
+                      {holding.symbol} / target {holding.targetPercent || 0}%
+                    </p>
+                  </div>
+                  <span className="badge">{holding.category}</span>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Value">
+                    <input
+                      className="input"
+                      type="number"
+                      value={holding.value}
+                      onChange={(event) => patchHolding(holding.id, { value: Number(event.target.value) })}
+                    />
+                  </Field>
+                  <Field label="Target percent">
+                    <input
+                      className="input"
+                      type="number"
+                      value={holding.targetPercent || 0}
+                      onChange={(event) =>
+                        patchHolding(holding.id, { targetPercent: Number(event.target.value) })
+                      }
+                    />
+                  </Field>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div className="card space-y-3">
+          <h3 className="text-xl font-bold">Retirement and FI Assumptions</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="FI target">
+              <input
+                className="input"
+                type="number"
+                value={finance.assumptions.targetFiNumber}
+                onChange={(event) => patchAssumption("targetFiNumber", Number(event.target.value))}
+              />
+            </Field>
+            <Field label="Annual investment">
+              <input
+                className="input"
+                type="number"
+                value={finance.assumptions.annualInvestment}
+                onChange={(event) => patchAssumption("annualInvestment", Number(event.target.value))}
+              />
+            </Field>
+            <Field label="Expected return %">
+              <input
+                className="input"
+                type="number"
+                value={Math.round(finance.assumptions.expectedAnnualReturn * 1000) / 10}
+                onChange={(event) =>
+                  patchAssumption("expectedAnnualReturn", Number(event.target.value) / 100)
+                }
+              />
+            </Field>
+            <Field label="Emergency target">
+              <input
+                className="input"
+                type="number"
+                value={finance.assumptions.emergencyFundTarget}
+                onChange={(event) => patchAssumption("emergencyFundTarget", Number(event.target.value))}
+              />
+            </Field>
+            <Field label="Pension monthly">
+              <input
+                className="input"
+                type="number"
+                value={finance.assumptions.pensionMonthly || 0}
+                onChange={(event) => patchAssumption("pensionMonthly", Number(event.target.value))}
+              />
+            </Field>
+            <Field label="Social Security monthly">
+              <input
+                className="input"
+                type="number"
+                value={finance.assumptions.socialSecurityMonthly || 0}
+                onChange={(event) => patchAssumption("socialSecurityMonthly", Number(event.target.value))}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="card space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-bold">Quarterly Financial Review</h3>
+              <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+                AAR-style checklist for the money system.
+              </p>
+            </div>
+            <span className="badge">{formatPercent(reviewProgress)}</span>
+          </div>
+          <div className="space-y-2">
+            {finance.quarterlyChecklist.map((item) => (
+              <label key={item.id} className="panel flex items-start gap-3 p-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5 accent-signal-600"
+                  checked={item.completed}
+                  onChange={(event) => toggleReviewItem(item.id, event.target.checked)}
+                />
+                <span className="text-sm font-semibold">{item.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" onClick={createFinanceAar}>
+              Save Review AAR
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() =>
+                patchFinance({
+                  quarterlyChecklist: finance.quarterlyChecklist.map((item) => ({
+                    ...item,
+                    completed: false,
+                  })),
+                })
+              }
+            >
+              Reset Checklist
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card grid gap-5 lg:grid-cols-2">
+        <div>
+          <h3 className="text-xl font-bold">Priority Order</h3>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-700 dark:text-ink-200">
+            {finance.priorityOrder.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ol>
+        </div>
+        <div>
+          <h3 className="text-xl font-bold">HFOS Principles</h3>
+          <ul className="mt-3 space-y-2 text-sm text-ink-700 dark:text-ink-200">
+            {finance.principles.map((item) => (
+              <li key={item} className="rounded-md bg-ink-50 p-3 dark:bg-ink-950">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { data, updateSettings, updateCategory, addCategory, replaceData, resetData } = useLifeOps();
   const [newCategory, setNewCategory] = useState("");
@@ -1406,6 +1919,7 @@ export function App() {
     if (page === "projects") return <ProjectsPage setPage={setPage} />;
     if (page === "aars") return <AARPage />;
     if (page === "lessons") return <LessonsPage />;
+    if (page === "finance") return <FinancePage setPage={setPage} />;
     return <SettingsPage />;
   }, [page]);
 

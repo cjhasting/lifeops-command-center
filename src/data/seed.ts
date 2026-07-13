@@ -1,4 +1,4 @@
-import type { AppData, Category } from "../types";
+import type { AppData, Category, FinancialData } from "../types";
 import { addDays, nowIso, todayKey, uid } from "../utils/date";
 
 const categoryNames = [
@@ -38,7 +38,7 @@ export function createSeedData(): AppData {
   const category = (name: string) => categories.find((item) => item.name === name)?.id;
 
   return {
-    version: 1,
+    version: 2,
     categories,
     missions: [
       {
@@ -138,6 +138,7 @@ export function createSeedData(): AppData {
       },
     ],
     avoidanceCheckIns: [],
+    finance: createFinanceSeedData(),
     settings: {
       theme: "system",
       staleTaskDays: 14,
@@ -151,5 +152,166 @@ export function createSeedData(): AppData {
         "Do a short end-of-day review",
       ],
     },
+  };
+}
+
+export function createFinanceSeedData(): FinancialData {
+  const now = nowIso();
+  const tspId = uid("acct");
+  const rothIraId = uid("acct");
+  const brokerageId = uid("acct");
+
+  return {
+    mission:
+      "Build enough wealth that work becomes optional while living a life I enjoy today.",
+    principles: [
+      "Automate decisions and remove friction.",
+      "Use low-cost diversified index funds as the default.",
+      "Never time the market or panic sell.",
+      "Increase investments as income rises.",
+      "Keep the system simple enough to use for decades.",
+    ],
+    priorityOrder: [
+      "Cover essential expenses.",
+      "Build and protect the emergency fund.",
+      "Contribute to Roth TSP.",
+      "Max Roth IRA when eligible.",
+      "Invest additional dollars in brokerage.",
+      "Consider extra mortgage payments only when aligned with larger goals.",
+    ],
+    accounts: [
+      {
+        id: tspId,
+        name: "Roth TSP",
+        type: "TSP",
+        balance: 0,
+        annualContribution: 0,
+        targetRole: "Tax-advantaged retirement base.",
+        updatedAt: now,
+      },
+      {
+        id: rothIraId,
+        name: "Roth IRA",
+        type: "Roth IRA",
+        balance: 0,
+        annualContribution: 0,
+        annualLimit: 7000,
+        targetRole: "Max annually when eligible.",
+        updatedAt: now,
+      },
+      {
+        id: brokerageId,
+        name: "Brokerage",
+        type: "Brokerage",
+        balance: 0,
+        annualContribution: 0,
+        targetRole: "Financial independence bridge before traditional retirement.",
+        updatedAt: now,
+      },
+      {
+        id: uid("acct"),
+        name: "Emergency Fund",
+        type: "Savings",
+        balance: 0,
+        targetRole: "Cash buffer before extra investing.",
+        updatedAt: now,
+      },
+      {
+        id: uid("acct"),
+        name: "Home Equity",
+        type: "Home Equity",
+        balance: 0,
+        targetRole: "Long-term net worth component.",
+        updatedAt: now,
+      },
+      {
+        id: uid("acct"),
+        name: "Debts",
+        type: "Debt",
+        balance: 0,
+        targetRole: "Subtract from net worth.",
+        updatedAt: now,
+      },
+    ],
+    holdings: [
+      {
+        id: uid("hold"),
+        accountId: tspId,
+        symbol: "C",
+        name: "C Fund",
+        category: "C Fund",
+        value: 0,
+        targetPercent: 70,
+        updatedAt: now,
+      },
+      {
+        id: uid("hold"),
+        accountId: tspId,
+        symbol: "I",
+        name: "I Fund",
+        category: "I Fund",
+        value: 0,
+        targetPercent: 20,
+        updatedAt: now,
+      },
+      {
+        id: uid("hold"),
+        accountId: tspId,
+        symbol: "S",
+        name: "S Fund",
+        category: "S Fund",
+        value: 0,
+        targetPercent: 10,
+        updatedAt: now,
+      },
+      {
+        id: uid("hold"),
+        accountId: rothIraId,
+        symbol: "SCHB",
+        name: "Schwab U.S. Broad Market ETF",
+        category: "SCHB",
+        value: 0,
+        targetPercent: 100,
+        updatedAt: now,
+      },
+      {
+        id: uid("hold"),
+        accountId: brokerageId,
+        symbol: "SCHB",
+        name: "Schwab U.S. Broad Market ETF",
+        category: "SCHB",
+        value: 0,
+        targetPercent: 80,
+        updatedAt: now,
+      },
+      {
+        id: uid("hold"),
+        accountId: brokerageId,
+        symbol: "STOCKS",
+        name: "Individual Stocks",
+        category: "Individual Stocks",
+        value: 0,
+        targetPercent: 20,
+        updatedAt: now,
+      },
+    ],
+    assumptions: {
+      targetFiNumber: 1000000,
+      emergencyFundTarget: 15000,
+      annualInvestment: 12000,
+      expectedAnnualReturn: 0.07,
+      retirementAge: 60,
+      pensionMonthly: 0,
+      socialSecurityMonthly: 0,
+    },
+    quarterlyChecklist: [
+      { id: uid("review"), label: "Update balances for every account.", completed: false },
+      { id: uid("review"), label: "Confirm Roth IRA progress toward annual max.", completed: false },
+      { id: uid("review"), label: "Review TSP allocation against 70 C / 20 I / 10 S.", completed: false },
+      { id: uid("review"), label: "Check brokerage individual stocks stay at or below 20%.", completed: false },
+      { id: uid("review"), label: "Review beneficiaries and insurance once this year.", completed: false },
+      { id: uid("review"), label: "Update net worth and FI countdown.", completed: false },
+      { id: uid("review"), label: "Capture one financial AAR lesson or adjustment.", completed: false },
+    ],
   };
 }
