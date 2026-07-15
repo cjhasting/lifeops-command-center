@@ -1,4 +1,4 @@
-import type { AppData, Category, FinancialData } from "../types";
+import type { AppData, Category } from "../types";
 import { addDays, nowIso, todayKey, uid } from "../utils/date";
 
 const categoryNames = [
@@ -38,7 +38,7 @@ export function createSeedData(): AppData {
   const category = (name: string) => categories.find((item) => item.name === name)?.id;
 
   return {
-    version: 3,
+    version: 5,
     categories,
     missions: [
       {
@@ -138,7 +138,6 @@ export function createSeedData(): AppData {
       },
     ],
     avoidanceCheckIns: [],
-    finance: createFinanceSeedData(),
     settings: {
       theme: "system",
       staleTaskDays: 14,
@@ -152,179 +151,5 @@ export function createSeedData(): AppData {
         "Do a short end-of-day review",
       ],
     },
-  };
-}
-
-export function createFinanceSeedData(): FinancialData {
-  const now = nowIso();
-  const tspId = uid("acct");
-  const rothIraId = uid("acct");
-  const brokerageId = uid("acct");
-
-  return {
-    mission:
-      "Build enough wealth that work becomes optional while living a life I enjoy today.",
-    principles: [
-      "Automate decisions and remove friction.",
-      "Use low-cost diversified index funds as the default.",
-      "Never time the market or panic sell.",
-      "Increase investments as income rises.",
-      "Keep the system simple enough to use for decades.",
-      "Eliminate emotional decisions; rely on repeatable rules.",
-    ],
-    priorityOrder: [
-      "Cover essential expenses.",
-      "Contribute at least 5% to Roth TSP (never below the full match).",
-      "Maintain the emergency fund at target.",
-      "Max Roth IRA every year.",
-      "Invest additional dollars in brokerage.",
-      "Extra mortgage payments only when aligned with larger goals.",
-    ],
-    accounts: [
-      {
-        id: tspId,
-        name: "Roth TSP",
-        type: "TSP",
-        balance: 0,
-        annualContribution: 0,
-        annualLimit: 23500,
-        targetRole: "Tax-advantaged retirement base. Never below 5% (full match).",
-        updatedAt: now,
-      },
-      {
-        id: rothIraId,
-        name: "Roth IRA",
-        type: "Roth IRA",
-        balance: 0,
-        annualContribution: 0,
-        annualLimit: 7000,
-        targetRole: "Max annually when eligible.",
-        updatedAt: now,
-      },
-      {
-        id: brokerageId,
-        name: "Brokerage",
-        type: "Brokerage",
-        balance: 0,
-        annualContribution: 0,
-        targetRole: "Financial independence bridge before traditional retirement.",
-        updatedAt: now,
-      },
-      {
-        id: uid("acct"),
-        name: "Emergency Fund",
-        type: "Savings",
-        balance: 0,
-        targetRole: "Cash buffer before extra investing.",
-        updatedAt: now,
-      },
-      {
-        id: uid("acct"),
-        name: "Home Equity",
-        type: "Home Equity",
-        balance: 0,
-        targetRole: "Long-term net worth component.",
-        updatedAt: now,
-      },
-      {
-        id: uid("acct"),
-        name: "Debts",
-        type: "Debt",
-        balance: 0,
-        targetRole: "Subtract from net worth.",
-        updatedAt: now,
-      },
-    ],
-    holdings: [
-      {
-        id: uid("hold"),
-        accountId: tspId,
-        symbol: "C",
-        name: "C Fund",
-        category: "C Fund",
-        value: 0,
-        targetPercent: 70,
-        updatedAt: now,
-      },
-      {
-        id: uid("hold"),
-        accountId: tspId,
-        symbol: "I",
-        name: "I Fund",
-        category: "I Fund",
-        value: 0,
-        targetPercent: 20,
-        updatedAt: now,
-      },
-      {
-        id: uid("hold"),
-        accountId: tspId,
-        symbol: "S",
-        name: "S Fund",
-        category: "S Fund",
-        value: 0,
-        targetPercent: 10,
-        updatedAt: now,
-      },
-      {
-        id: uid("hold"),
-        accountId: rothIraId,
-        symbol: "SCHB",
-        name: "Schwab U.S. Broad Market ETF",
-        category: "SCHB",
-        value: 0,
-        targetPercent: 100,
-        updatedAt: now,
-      },
-      {
-        id: uid("hold"),
-        accountId: brokerageId,
-        symbol: "SCHB",
-        name: "Schwab U.S. Broad Market ETF",
-        category: "SCHB",
-        value: 0,
-        targetPercent: 80,
-        updatedAt: now,
-      },
-      {
-        id: uid("hold"),
-        accountId: brokerageId,
-        symbol: "STOCKS",
-        name: "Individual Stocks",
-        category: "Individual Stocks",
-        value: 0,
-        targetPercent: 20,
-        updatedAt: now,
-      },
-    ],
-    assumptions: {
-      targetFiNumber: 1000000,
-      emergencyFundTarget: 15000,
-      annualInvestment: 12000,
-      expectedAnnualReturn: 0.07,
-      annualEssentialExpenses: 0,
-      tspMatchCaptured: true,
-      retirementAge: 60,
-      pensionMonthly: 0,
-      socialSecurityMonthly: 0,
-    },
-    quarterlyChecklist: [
-      { id: uid("review"), label: "Update holding values for every account.", completed: false },
-      { id: uid("review"), label: "Confirm Roth IRA progress toward the annual max.", completed: false },
-      { id: uid("review"), label: "Check allocations against targets (act only outside 5-point bands, contributions first).", completed: false },
-      { id: uid("review"), label: "Check individual stocks stay at or below 20% of brokerage.", completed: false },
-      { id: uid("review"), label: "Update invested assets and FI progress.", completed: false },
-      { id: uid("review"), label: "Export a JSON backup of this app.", completed: false },
-      { id: uid("review"), label: "Capture one lesson or adjustment.", completed: false },
-    ],
-    annualChecklist: [
-      { id: uid("review"), label: "Recalculate the FI target from current expenses and pension estimates.", completed: false },
-      { id: uid("review"), label: "Recalculate the emergency fund target (6 months of essential expenses).", completed: false },
-      { id: uid("review"), label: "Review TSP allocation against 70 C / 20 I / 10 S.", completed: false },
-      { id: uid("review"), label: "Review beneficiaries on every account.", completed: false },
-      { id: uid("review"), label: "Review insurance coverage.", completed: false },
-      { id: uid("review"), label: "Trim any single stock above 10% of brokerage back to 5%.", completed: false },
-      { id: uid("review"), label: "Re-read the HFOS document start to finish.", completed: false },
-    ],
   };
 }

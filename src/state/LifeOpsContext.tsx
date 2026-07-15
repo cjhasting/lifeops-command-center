@@ -20,7 +20,6 @@ import type {
   LessonLearned,
   OpenLoop,
   Project,
-  FinancialData,
 } from "../types";
 import { nowIso, todayKey, uid } from "../utils/date";
 
@@ -40,7 +39,6 @@ interface LifeOpsContextValue {
   replaceData: (next: AppData) => void;
   resetData: () => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
-  updateFinance: (updater: (finance: FinancialData) => FinancialData) => void;
   upsertMission: (mission: Partial<DailyMission>) => DailyMission;
   addOpenLoop: (loop: Partial<OpenLoop> & Pick<OpenLoop, "title">) => OpenLoop;
   updateOpenLoop: (id: string, patch: Partial<OpenLoop>) => void;
@@ -68,38 +66,17 @@ function withTimestamp<T extends { updatedAt?: string }>(item: T): T {
   return { ...item, updatedAt: nowIso() };
 }
 
-function migrateFinance(
-  snapshotFinance: FinancialData | undefined,
-  seedFinance: FinancialData,
-  snapshotVersion: number,
-): FinancialData {
-  if (!snapshotFinance) return seedFinance;
-  if (snapshotVersion >= 3) {
-    return {
-      ...snapshotFinance,
-      annualChecklist: snapshotFinance.annualChecklist || seedFinance.annualChecklist,
-    };
-  }
-  // HFOS v2 migration: refresh policy text and checklists, keep user numbers.
-  return {
-    ...snapshotFinance,
-    mission: seedFinance.mission,
-    principles: seedFinance.principles,
-    priorityOrder: seedFinance.priorityOrder,
-    quarterlyChecklist: seedFinance.quarterlyChecklist,
-    annualChecklist: seedFinance.annualChecklist,
-    assumptions: { ...seedFinance.assumptions, ...snapshotFinance.assumptions },
-  };
-}
-
 function normalizeData(snapshot?: AppData | null): AppData {
   const seed = createSeedData();
   if (!snapshot) return seed;
 
+  const snapshotData = { ...(snapshot as AppData & { finance?: unknown }) };
+  delete snapshotData.finance;
+
   return {
     ...seed,
-    ...snapshot,
-    version: Math.max(snapshot.version || 1, seed.version),
+    ...snapshotData,
+    version: seed.version,
     categories: snapshot.categories || seed.categories,
     missions: snapshot.missions || seed.missions,
     openLoops: snapshot.openLoops || seed.openLoops,
@@ -108,7 +85,6 @@ function normalizeData(snapshot?: AppData | null): AppData {
     lessons: snapshot.lessons || seed.lessons,
     habits: snapshot.habits || seed.habits,
     avoidanceCheckIns: snapshot.avoidanceCheckIns || seed.avoidanceCheckIns,
-    finance: migrateFinance(snapshot.finance, seed.finance, snapshot.version || 1),
     settings: { ...seed.settings, ...(snapshot.settings || {}) },
   };
 }
@@ -153,16 +129,6 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       mutate((current) => ({
         ...current,
         settings: { ...current.settings, ...patch },
-      }));
-    },
-    [mutate],
-  );
-
-  const updateFinance = useCallback(
-    (updater: (finance: FinancialData) => FinancialData) => {
-      mutate((current) => ({
-        ...current,
-        finance: updater(current.finance),
       }));
     },
     [mutate],
@@ -444,7 +410,6 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       replaceData,
       resetData,
       updateSettings,
-      updateFinance,
       upsertMission,
       addOpenLoop,
       updateOpenLoop,
@@ -476,7 +441,6 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       resetData,
       updateAAR,
       updateCategory,
-      updateFinance,
       updateHabit,
       updateLesson,
       updateOpenLoop,

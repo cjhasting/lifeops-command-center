@@ -1,6 +1,6 @@
 # LifeOps Command Center
 
-LifeOps Command Center is a mobile-first, local-first personal operations dashboard. It is built as a tight MVP for planning today, tracking open loops, moving active projects, running a Financial Command Center, writing short AAR reviews, collecting lessons learned, and salvaging low-energy days.
+LifeOps Command Center is a mobile-first, local-first personal operations dashboard. It is built as a tight MVP for planning today, tracking open loops, moving active projects, writing short AAR reviews, collecting lessons learned, and salvaging low-energy days.
 
 ## Stack
 
@@ -50,7 +50,6 @@ No environment variables are required for Version 1.
 - Projects with stale warnings, project AAR starter, archive, and next-action conversion
 - AAR Reviews for Daily, Weekly, Project, and Custom reviews
 - Lessons Learned library
-- Financial Command Center with net worth, allocation tracking, next-dollar recommendation, FI countdown, assumptions, and quarterly review checklist
 - Minimum Viable Day mode
 - What Am I Avoiding check-in
 - Minimal habit check-in without streak language

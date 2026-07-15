@@ -5,7 +5,6 @@ export type PageKey =
   | "projects"
   | "aars"
   | "lessons"
-  | "finance"
   | "settings";
 
 export interface Category {
@@ -163,76 +162,6 @@ export interface AppSettings {
   minimumDayDefaults: string[];
 }
 
-export type FinancialAccountType =
-  | "TSP"
-  | "Roth IRA"
-  | "Brokerage"
-  | "Savings"
-  | "Home Equity"
-  | "Debt"
-  | "Other";
-
-export interface FinancialAccount {
-  id: string;
-  name: string;
-  type: FinancialAccountType;
-  balance: number;
-  annualContribution?: number;
-  annualLimit?: number;
-  targetRole?: string;
-  updatedAt: string;
-}
-
-export type InvestmentCategory =
-  | "C Fund"
-  | "I Fund"
-  | "S Fund"
-  | "SCHB"
-  | "Individual Stocks"
-  | "Cash"
-  | "Other";
-
-export interface InvestmentHolding {
-  id: string;
-  accountId: string;
-  symbol: string;
-  name: string;
-  category: InvestmentCategory;
-  value: number;
-  targetPercent?: number;
-  updatedAt: string;
-}
-
-export interface FinancialAssumptions {
-  targetFiNumber: number;
-  emergencyFundTarget: number;
-  annualInvestment: number;
-  expectedAnnualReturn: number;
-  annualEssentialExpenses?: number;
-  tspMatchCaptured?: boolean;
-  currentAge?: number;
-  retirementAge?: number;
-  pensionMonthly?: number;
-  socialSecurityMonthly?: number;
-}
-
-export interface FinancialReviewItem {
-  id: string;
-  label: string;
-  completed: boolean;
-}
-
-export interface FinancialData {
-  mission: string;
-  principles: string[];
-  priorityOrder: string[];
-  accounts: FinancialAccount[];
-  holdings: InvestmentHolding[];
-  assumptions: FinancialAssumptions;
-  quarterlyChecklist: FinancialReviewItem[];
-  annualChecklist?: FinancialReviewItem[];
-}
-
 export interface AppData {
   version: number;
   categories: Category[];
@@ -243,7 +172,6 @@ export interface AppData {
   lessons: LessonLearned[];
   habits: Habit[];
   avoidanceCheckIns: AvoidanceCheckIn[];
-  finance: FinancialData;
   settings: AppSettings;
 }
 
