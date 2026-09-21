@@ -1,74 +1,55 @@
 import type { AppData } from "../types";
+import { migrateData } from "../domain/data";
+export const DATA_KEY = "lifeops:data:v6";
+export const RECOVERY_KEY = "lifeops:pre-migration";
 
-const DB_NAME = "lifeops-command-center";
-const DB_VERSION = 1;
-const STORE_NAME = "snapshots";
-const SNAPSHOT_KEY = "app-data";
-const FALLBACK_KEY = "lifeops:fallback";
-
-function openDb(): Promise<IDBDatabase> {
+async function legacyIndexedDb(): Promise<unknown> {
+  if (typeof indexedDB === "undefined") return null;
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
+    const req = indexedDB.open("lifeops-command-center", 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("snapshots"))
+        req.result.createObjectStore("snapshots");
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    req.onerror = () =>
+      reject(
+        new Error(
+          "Could not read the existing database. Your data has not been replaced.",
+        ),
+      );
+    req.onblocked = () =>
+      reject(new Error("Close other LifeOps tabs, then reload."));
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction("snapshots", "readonly");
+      const read = tx.objectStore("snapshots").get("app-data");
+      read.onsuccess = () => resolve(read.result || null);
+      read.onerror = () => reject(read.error);
+      tx.oncomplete = () => db.close();
+    };
   });
 }
-
-function idbAvailable(): boolean {
-  return typeof indexedDB !== "undefined";
-}
-
 export async function loadSnapshot(): Promise<AppData | null> {
-  if (!idbAvailable()) {
-    const raw = localStorage.getItem(FALLBACK_KEY);
-    return raw ? (JSON.parse(raw) as AppData) : null;
-  }
-
-  try {
-    const db = await openDb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.get(SNAPSHOT_KEY);
-      request.onsuccess = () => resolve((request.result as AppData) || null);
-      request.onerror = () => reject(request.error);
-    });
-  } catch {
-    const raw = localStorage.getItem(FALLBACK_KEY);
-    return raw ? (JSON.parse(raw) as AppData) : null;
-  }
+  const current = localStorage.getItem(DATA_KEY);
+  if (current !== null) return migrateData(JSON.parse(current));
+  // The old writer saved localStorage first; it may be newer than IndexedDB.
+  const fallback = localStorage.getItem("lifeops:fallback");
+  const old: unknown =
+    fallback !== null ? JSON.parse(fallback) : await legacyIndexedDb();
+  if (old === null) return null;
+  const migrated = migrateData(old);
+  if (!localStorage.getItem(RECOVERY_KEY))
+    localStorage.setItem(RECOVERY_KEY, JSON.stringify(old));
+  saveSnapshot(migrated);
+  return migrated;
 }
-
-export async function saveSnapshot(data: AppData): Promise<void> {
-  localStorage.setItem(FALLBACK_KEY, JSON.stringify(data));
-
-  if (!idbAvailable()) return;
-
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.put(data, SNAPSHOT_KEY);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+// One canonical, synchronous atomic write: failure never advances in-memory data.
+export function saveSnapshot(data: AppData): void {
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
 }
-
 export async function clearSnapshot(): Promise<void> {
-  localStorage.removeItem(FALLBACK_KEY);
-  if (!idbAvailable()) return;
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(SNAPSHOT_KEY);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  localStorage.removeItem(DATA_KEY);
+}
+export function backupBeforeImport(data: AppData) {
+  localStorage.setItem("lifeops:before-import", JSON.stringify(data));
 }

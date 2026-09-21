@@ -1,0 +1,202 @@
+{
+  "version": 6,
+  "categories": [
+    {
+      "id": "house",
+      "name": "House",
+      "archived": false,
+      "createdAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "missions": [
+    {
+      "id": "old-mission",
+      "date": "2026-09-20",
+      "topThree": [
+        "Measure the garage wall",
+        "Ambiguous",
+        "Unmatched historical priority"
+      ],
+      "focus": "A calm start",
+      "notes": "Keep this historical note.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "openLoops": [
+    {
+      "id": "garage-task",
+      "title": "Measure the garage wall",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z",
+      "relatedProjectId": "garage",
+      "nextAction": "Just the back wall. Jot down the width and height.",
+      "minimumVersion": "Find the tape measure",
+      "dueDate": "2026-09-25"
+    },
+    {
+      "id": "walk",
+      "title": "Take a 30-minute walk",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z",
+      "relatedProjectId": "outdoors",
+      "minimumVersion": "Put on walking shoes"
+    },
+    {
+      "id": "weekend",
+      "title": "Send Alex a few weekend ideas",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "followup",
+      "title": "Check on the shelf delivery",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z",
+      "followUpDate": "2026-09-20",
+      "relatedProjectId": "garage"
+    }
+  ],
+  "projects": [
+    {
+      "id": "garage",
+      "name": "A more useful garage",
+      "status": "Building",
+      "currentObjective": "Space to park, and a place for every tool.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "outdoors",
+      "name": "A little more time outside",
+      "status": "Building",
+      "currentObjective": "Build a gentle rhythm of moving every day.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "weekends",
+      "name": "Unhurried weekends",
+      "status": "Building",
+      "currentObjective": "Make a little room for people and places we love.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "aarReviews": [
+    {
+      "id": "old-review",
+      "title": "A useful weekly review",
+      "type": "Weekly",
+      "date": "2026-09-14",
+      "wentWell": "Small steps helped",
+      "tags": [
+        "test"
+      ],
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "lessons": [
+    {
+      "id": "old-lesson",
+      "lesson": "Make the first step small",
+      "status": "Active",
+      "actionToApply": "Prepare the tools",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "habits": [
+    {
+      "id": "old-habit",
+      "name": "A short walk",
+      "minimumVersion": "Put on shoes",
+      "completedDates": [
+        "2026-09-19"
+      ],
+      "active": true,
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "avoidanceCheckIns": [
+    {
+      "id": "old-checkin",
+      "date": "2026-09-18",
+      "avoidedThing": "Getting started",
+      "reason": "Unclear next step",
+      "twoMinuteAction": "Write one action",
+      "createdAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "settings": {
+    "theme": "light",
+    "staleTaskDays": 14,
+    "staleProjectDays": 21,
+    "aiSuggestionsEnabled": false,
+    "minimumDayDefaults": [
+      "Drink water"
+    ]
+  },
+  "notes": [
+    {
+      "id": "garage-note",
+      "text": "Garage is a mess.\nNeed shelves.\nCheck measurements before buying.",
+      "state": "note",
+      "relatedProjectId": "garage",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "weekend-note",
+      "text": "A slow Saturday outside.\nMaybe the trail by the lake, then lunch with everyone.",
+      "state": "inbox",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "reading-note",
+      "text": "Look up the book Maya mentioned. Something about making room for less.",
+      "state": "inbox",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "dayPlans": [
+    {
+      "date": "2026-09-20",
+      "taskIds": [
+        "garage-task",
+        "walk",
+        "weekend"
+      ],
+      "lowEnergy": false,
+      "smallActions": [
+        {
+          "id": "minimum",
+          "taskId": "walk",
+          "text": "Put on walking shoes",
+          "minimum": true,
+          "completedAt": "2026-09-20T18:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}

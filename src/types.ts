@@ -1,11 +1,6 @@
 export type ThemeMode = "light" | "dark" | "system";
 export type PageKey =
-  | "dashboard"
-  | "loops"
-  | "projects"
-  | "aars"
-  | "lessons"
-  | "settings";
+  "dashboard" | "loops" | "projects" | "aars" | "lessons" | "settings";
 
 export interface Category {
   id: string;
@@ -40,6 +35,14 @@ export type Priority = "Low" | "Medium" | "High";
 export type RepeatSetting = "None" | "Daily" | "Weekly" | "Monthly";
 
 export interface OpenLoop {
+  plannedDate?: string;
+  minimumVersion?: string;
+  sourceNoteId?: string;
+  extractionKey?: string;
+  recurrenceParentId?: string;
+  recurrenceDay?: number;
+  completionDate?: string;
+  previousStatus?: OpenLoopStatus;
   id: string;
   title: string;
   categoryId?: string;
@@ -73,6 +76,7 @@ export interface ProjectLink {
 }
 
 export interface Project {
+  nextActionId?: string;
   id: string;
   name: string;
   categoryId?: string;
@@ -110,10 +114,7 @@ export interface AARReview {
 }
 
 export type LessonSourceType =
-  | "AAR"
-  | "Avoidance Check-In"
-  | "Project"
-  | "Manual";
+  "AAR" | "Avoidance Check-In" | "Project" | "Manual";
 export type LessonStatus = "Active" | "Applied" | "Archived";
 
 export interface LessonLearned {
@@ -162,7 +163,33 @@ export interface AppSettings {
   minimumDayDefaults: string[];
 }
 
+export interface CapturedNote {
+  id: string;
+  text: string;
+  state: "inbox" | "note" | "archived";
+  relatedProjectId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlanAction {
+  id: string;
+  taskId?: string;
+  text?: string;
+  minimum?: boolean;
+  completedAt?: string;
+}
+
+export interface DayPlan {
+  date: string;
+  taskIds: string[];
+  lowEnergy: boolean;
+  smallActions: PlanAction[];
+}
+
 export interface AppData {
+  notes: CapturedNote[];
+  dayPlans: DayPlan[];
   version: number;
   categories: Category[];
   missions: DailyMission[];
@@ -176,9 +203,4 @@ export interface AppData {
 }
 
 export type QuickAddKind =
-  | "Open Loop"
-  | "Project"
-  | "AAR"
-  | "Lesson"
-  | "Avoidance Check-In"
-  | "Habit";
+  "Open Loop" | "Project" | "AAR" | "Lesson" | "Avoidance Check-In" | "Habit";

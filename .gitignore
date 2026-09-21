@@ -7,3 +7,7 @@ outputs/
 work/
 *.log
 *.zip
+test-results/
+playwright-report/
+.vercel
+.env*

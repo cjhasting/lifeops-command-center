@@ -1,7 +1,12 @@
 import type { AARReview, AppData, LessonLearned } from "../types";
-import { formatDate, weekStartKey } from "./date";
+import { migrateData } from "../domain/data";
+import { formatDate, todayKey, weekStartKey } from "./date";
 
-function downloadText(filename: string, text: string, mime = "text/plain"): void {
+function downloadText(
+  filename: string,
+  text: string,
+  mime = "text/plain",
+): void {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -13,7 +18,7 @@ function downloadText(filename: string, text: string, mime = "text/plain"): void
 
 export function exportDataJson(data: AppData): void {
   downloadText(
-    `lifeops-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    `lifeops-backup-${todayKey()}.json`,
     JSON.stringify(data, null, 2),
     "application/json",
   );
@@ -24,7 +29,7 @@ export function importDataFromFile(file: File): Promise<AppData> {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        resolve(JSON.parse(String(reader.result)) as AppData);
+        resolve(migrateData(JSON.parse(String(reader.result))));
       } catch (error) {
         reject(error);
       }
@@ -41,7 +46,7 @@ function section(title: string, value?: string): string {
 export function aarToMarkdown(review: AARReview): string {
   const title =
     review.type === "Weekly"
-      ? `# Weekly AAR - Week of ${formatDate(weekStartKey(new Date(review.date)))}`
+      ? `# Weekly AAR - Week of ${formatDate(weekStartKey(new Date(`${review.date}T12:00:00`)))}`
       : `# ${review.title || `${review.type} AAR`}`;
   return [
     title,
@@ -64,7 +69,11 @@ export function aarToMarkdown(review: AARReview): string {
 }
 
 export function exportAarMarkdown(review: AARReview): void {
-  downloadText(`${review.title || "aar-review"}.md`, aarToMarkdown(review), "text/markdown");
+  downloadText(
+    `${review.title || "aar-review"}.md`,
+    aarToMarkdown(review),
+    "text/markdown",
+  );
 }
 
 export function lessonsToMarkdown(lessons: LessonLearned[]): string {
@@ -85,5 +94,9 @@ export function lessonsToMarkdown(lessons: LessonLearned[]): string {
 }
 
 export function exportLessonsMarkdown(lessons: LessonLearned[]): void {
-  downloadText("lifeops-lessons.md", lessonsToMarkdown(lessons), "text/markdown");
+  downloadText(
+    "lifeops-lessons.md",
+    lessonsToMarkdown(lessons),
+    "text/markdown",
+  );
 }
