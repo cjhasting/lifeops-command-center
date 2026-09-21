@@ -4,11 +4,16 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { createSeedData } from "../data/seed";
-import { clearSnapshot, loadSnapshot, saveSnapshot } from "../storage/localDb";
+import {
+  backupBeforeImport,
+  loadSnapshot,
+  saveSnapshot,
+} from "../storage/localDb";
 import type {
   AARReview,
   AppData,
@@ -21,6 +26,7 @@ import type {
   OpenLoop,
   Project,
 } from "../types";
+import { migrateData, completeTask } from "../domain/data";
 import { nowIso, todayKey, uid } from "../utils/date";
 
 type CollectionName =
@@ -36,6 +42,9 @@ type CollectionName =
 interface LifeOpsContextValue {
   data: AppData;
   ready: boolean;
+  error: string;
+  commit: (updater: (current: AppData) => AppData) => boolean;
+  clearError: () => void;
   replaceData: (next: AppData) => void;
   resetData: () => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -44,7 +53,9 @@ interface LifeOpsContextValue {
   updateOpenLoop: (id: string, patch: Partial<OpenLoop>) => void;
   addProject: (project: Partial<Project> & Pick<Project, "name">) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
-  addAAR: (review: Partial<AARReview> & Pick<AARReview, "title" | "type">) => AARReview;
+  addAAR: (
+    review: Partial<AARReview> & Pick<AARReview, "title" | "type">,
+  ) => AARReview;
   updateAAR: (id: string, patch: Partial<AARReview>) => void;
   addLesson: (
     lesson: Partial<LessonLearned> & Pick<LessonLearned, "lesson">,
@@ -66,63 +77,81 @@ function withTimestamp<T extends { updatedAt?: string }>(item: T): T {
   return { ...item, updatedAt: nowIso() };
 }
 
-function normalizeData(snapshot?: AppData | null): AppData {
-  const seed = createSeedData();
-  if (!snapshot) return seed;
-
-  const snapshotData = { ...(snapshot as AppData & { finance?: unknown }) };
-  delete snapshotData.finance;
-
-  return {
-    ...seed,
-    ...snapshotData,
-    version: seed.version,
-    categories: snapshot.categories || seed.categories,
-    missions: snapshot.missions || seed.missions,
-    openLoops: snapshot.openLoops || seed.openLoops,
-    projects: snapshot.projects || seed.projects,
-    aarReviews: snapshot.aarReviews || seed.aarReviews,
-    lessons: snapshot.lessons || seed.lessons,
-    habits: snapshot.habits || seed.habits,
-    avoidanceCheckIns: snapshot.avoidanceCheckIns || seed.avoidanceCheckIns,
-    settings: { ...seed.settings, ...(snapshot.settings || {}) },
-  };
-}
-
 export function LifeOpsProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => createSeedData());
+  const currentRef = useRef(data);
   const [ready, setReady] = useState(false);
-
+  const [error, setError] = useState("");
   useEffect(() => {
-    loadSnapshot().then((snapshot) => {
-      setData(normalizeData(snapshot));
-      setReady(true);
-    });
+    let live = true;
+    loadSnapshot()
+      .then((snapshot) => {
+        if (!live) return;
+        const next = snapshot || createSeedData();
+        currentRef.current = next;
+        setData(next);
+        setReady(true);
+      })
+      .catch((e) => {
+        if (live)
+          setError(
+            `Could not load LifeOps. ${e.message} Stored data is untouched. Export recovery data or reload to try again.`,
+          );
+      });
+    return () => {
+      live = false;
+    };
   }, []);
-
   useEffect(() => {
-    if (ready) void saveSnapshot(data);
-  }, [data, ready]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const dark = data.settings.theme === "dark" || (data.settings.theme === "system" && prefersDark);
-    root.classList.toggle("dark", dark);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () =>
+      document.documentElement.classList.toggle(
+        "dark",
+        data.settings.theme === "dark" ||
+          (data.settings.theme === "system" && media.matches),
+      );
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
   }, [data.settings.theme]);
-
-  const mutate = useCallback((updater: (current: AppData) => AppData) => {
-    setData((current) => updater(current));
-  }, []);
-
-  const replaceData = useCallback((next: AppData) => {
-    setData(normalizeData(next));
-  }, []);
-
+  const mutate = useCallback(
+    (updater: (current: AppData) => AppData): boolean => {
+      try {
+        const next = updater(currentRef.current);
+        saveSnapshot(next);
+        currentRef.current = next;
+        setData(next);
+        setError("");
+        return true;
+      } catch (e) {
+        setError(
+          `Not saved. ${e instanceof Error ? e.message : "Storage is unavailable."} Your previous records are safe. Try exporting a backup to free storage.`,
+        );
+        return false;
+      }
+    },
+    [],
+  );
+  const replaceData = useCallback(
+    (input: AppData) => {
+      try {
+        const next = migrateData(input);
+        backupBeforeImport(currentRef.current);
+        mutate(() => next);
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Import failed. Existing records are unchanged.",
+        );
+      }
+    },
+    [mutate],
+  );
   const resetData = useCallback(async () => {
-    await clearSnapshot();
-    setData(createSeedData());
-  }, []);
+    backupBeforeImport(currentRef.current);
+    mutate(() => createSeedData());
+  }, [mutate]);
 
   const updateSettings = useCallback(
     (patch: Partial<AppSettings>) => {
@@ -149,7 +178,8 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         avoid: mission.avoid,
         notes: mission.notes,
         createdAt:
-          data.missions.find((item) => item.id === existingId)?.createdAt || now,
+          data.missions.find((item) => item.id === existingId)?.createdAt ||
+          now,
         updatedAt: now,
       };
       mutate((current) => ({
@@ -184,7 +214,10 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         updatedAt: now,
         lastTouchedAt: now,
       };
-      mutate((current) => ({ ...current, openLoops: [next, ...current.openLoops] }));
+      mutate((current) => ({
+        ...current,
+        openLoops: [next, ...current.openLoops],
+      }));
       return next;
     },
     [mutate],
@@ -192,12 +225,24 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
 
   const updateOpenLoop = useCallback(
     (id: string, patch: Partial<OpenLoop>) => {
-      mutate((current) => ({
-        ...current,
-        openLoops: current.openLoops.map((item) =>
-          item.id === id ? withTimestamp({ ...item, ...patch, lastTouchedAt: nowIso() }) : item,
-        ),
-      }));
+      mutate((current) => {
+        let next = current;
+        if (patch.status === "Done")
+          next = completeTask(current, id, todayKey());
+        else if (
+          patch.status &&
+          current.openLoops.find((t) => t.id === id)?.status === "Done"
+        )
+          next = completeTask(current, id, todayKey(), false);
+        return {
+          ...next,
+          openLoops: next.openLoops.map((item) =>
+            item.id === id
+              ? withTimestamp({ ...item, ...patch, lastTouchedAt: nowIso() })
+              : item,
+          ),
+        };
+      });
     },
     [mutate],
   );
@@ -218,7 +263,10 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         updatedAt: now,
         lastWorkedAt: project.lastWorkedAt || now,
       };
-      mutate((current) => ({ ...current, projects: [next, ...current.projects] }));
+      mutate((current) => ({
+        ...current,
+        projects: [next, ...current.projects],
+      }));
       return next;
     },
     [mutate],
@@ -237,7 +285,9 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
   );
 
   const addAAR = useCallback(
-    (review: Partial<AARReview> & Pick<AARReview, "title" | "type">): AARReview => {
+    (
+      review: Partial<AARReview> & Pick<AARReview, "title" | "type">,
+    ): AARReview => {
       const now = nowIso();
       const next: AARReview = {
         id: uid("aar"),
@@ -258,7 +308,10 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         createdAt: now,
         updatedAt: now,
       };
-      mutate((current) => ({ ...current, aarReviews: [next, ...current.aarReviews] }));
+      mutate((current) => ({
+        ...current,
+        aarReviews: [next, ...current.aarReviews],
+      }));
       return next;
     },
     [mutate],
@@ -277,7 +330,9 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
   );
 
   const addLesson = useCallback(
-    (lesson: Partial<LessonLearned> & Pick<LessonLearned, "lesson">): LessonLearned => {
+    (
+      lesson: Partial<LessonLearned> & Pick<LessonLearned, "lesson">,
+    ): LessonLearned => {
       const now = nowIso();
       const next: LessonLearned = {
         id: uid("lesson"),
@@ -291,7 +346,10 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         updatedAt: now,
         lastReviewedAt: lesson.lastReviewedAt,
       };
-      mutate((current) => ({ ...current, lessons: [next, ...current.lessons] }));
+      mutate((current) => ({
+        ...current,
+        lessons: [next, ...current.lessons],
+      }));
       return next;
     },
     [mutate],
@@ -344,7 +402,8 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
 
   const addAvoidance = useCallback(
     (
-      checkIn: Partial<AvoidanceCheckIn> & Pick<AvoidanceCheckIn, "avoidedThing">,
+      checkIn: Partial<AvoidanceCheckIn> &
+        Pick<AvoidanceCheckIn, "avoidedThing">,
     ): AvoidanceCheckIn => {
       const now = nowIso();
       const next: AvoidanceCheckIn = {
@@ -387,7 +446,10 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
         archived: false,
         createdAt: nowIso(),
       };
-      mutate((current) => ({ ...current, categories: [...current.categories, next] }));
+      mutate((current) => ({
+        ...current,
+        categories: [...current.categories, next],
+      }));
       return next;
     },
     [mutate],
@@ -407,6 +469,9 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
     () => ({
       data,
       ready,
+      error,
+      commit: mutate,
+      clearError: () => setError(""),
       replaceData,
       resetData,
       updateSettings,
@@ -436,6 +501,8 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
       addProject,
       data,
       ready,
+      error,
+      mutate,
       removeItem,
       replaceData,
       resetData,
@@ -450,7 +517,9 @@ export function LifeOpsProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <LifeOpsContext.Provider value={value}>{children}</LifeOpsContext.Provider>;
+  return (
+    <LifeOpsContext.Provider value={value}>{children}</LifeOpsContext.Provider>
+  );
 }
 
 export function useLifeOps(): LifeOpsContextValue {

@@ -11,13 +11,13 @@ export function nowIso(): string {
 }
 
 export function todayKey(date = new Date()): string {
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function addDays(dateKey: string, days: number): string {
-  return new Date(new Date(dateKey).getTime() + days * DAY_MS)
-    .toISOString()
-    .slice(0, 10);
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return todayKey(date);
 }
 
 export function daysBetween(fromIso?: string, to = new Date()): number {

@@ -1,0 +1,127 @@
+{
+  "version": 5,
+  "categories": [
+    {
+      "id": "house",
+      "name": "House",
+      "archived": false,
+      "createdAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "missions": [
+    {
+      "id": "old-mission",
+      "date": "2026-09-20",
+      "topThree": [
+        "Measure the garage wall",
+        "Ambiguous",
+        "Unmatched historical priority"
+      ],
+      "focus": "A calm start",
+      "notes": "Keep this historical note.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "openLoops": [
+    {
+      "id": "garage-task",
+      "title": "Measure the garage wall",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z",
+      "relatedProjectId": "garage",
+      "dueDate": "2026-09-25",
+      "minimumVersion": "Find the tape measure"
+    },
+    {
+      "id": "ambiguous-one",
+      "title": "Ambiguous",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z"
+    },
+    {
+      "id": "ambiguous-two",
+      "title": "Ambiguous",
+      "status": "Next Action",
+      "priority": "Medium",
+      "repeat": "None",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z",
+      "lastTouchedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "garage",
+      "name": "A more useful garage",
+      "status": "Building",
+      "currentObjective": "Space to park, and a place for every tool.",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "aarReviews": [
+    {
+      "id": "old-review",
+      "title": "A useful weekly review",
+      "type": "Weekly",
+      "date": "2026-09-14",
+      "wentWell": "Small steps helped",
+      "tags": [
+        "test"
+      ],
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "lessons": [
+    {
+      "id": "old-lesson",
+      "lesson": "Make the first step small",
+      "status": "Active",
+      "actionToApply": "Prepare the tools",
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "habits": [
+    {
+      "id": "old-habit",
+      "name": "A short walk",
+      "minimumVersion": "Put on shoes",
+      "completedDates": [
+        "2026-09-19"
+      ],
+      "active": true,
+      "createdAt": "2026-09-20T18:00:00.000Z",
+      "updatedAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "avoidanceCheckIns": [
+    {
+      "id": "old-checkin",
+      "date": "2026-09-18",
+      "avoidedThing": "Getting started",
+      "reason": "Unclear next step",
+      "twoMinuteAction": "Write one action",
+      "createdAt": "2026-09-20T18:00:00.000Z"
+    }
+  ],
+  "settings": {
+    "theme": "light",
+    "staleTaskDays": 14,
+    "staleProjectDays": 21,
+    "aiSuggestionsEnabled": false,
+    "minimumDayDefaults": [
+      "Drink water"
+    ]
+  }
+}

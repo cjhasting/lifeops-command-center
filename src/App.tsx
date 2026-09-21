@@ -1,1429 +1,258 @@
-import React, { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLifeOps } from "./state/LifeOpsContext";
-import type {
-  AARReview,
-  AARType,
-  AvoidanceCheckIn,
-  Category,
-  DailyMission,
-  Habit,
-  LessonLearned,
-  OpenLoop,
-  OpenLoopStatus,
-  PageKey,
-  Priority,
-  Project,
-  ProjectStatus,
-  QuickAddKind,
-  RepeatSetting,
-} from "./types";
-import { addDays, formatDate, isThisWeek, todayKey } from "./utils/date";
+import type { CapturedNote, OpenLoop } from "./types";
+import { todayKey } from "./utils/date";
+import { completeTask } from "./domain/data";
+import { Capture } from "./components/Capture";
+import { Today } from "./components/Today";
+import { Inbox, Projects } from "./components/Collections";
+import { More, downloadRecovery } from "./components/More";
 import {
-  exportAarMarkdown,
-  exportDataJson,
-  exportLessonsMarkdown,
-  importDataFromFile,
-} from "./utils/exporters";
-import {
-  isLoopStale,
-  isDueSoon,
-  isProjectStale,
-  needsFollowUp,
-  needsNextAction,
-  suggestForLoop,
-  suggestForProject,
-  suggestFromAAR,
-} from "./utils/rules";
-
-const pages: { key: PageKey; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "loops", label: "Open Loops" },
-  { key: "projects", label: "Projects" },
-  { key: "aars", label: "AAR Reviews" },
-  { key: "lessons", label: "Lessons" },
-  { key: "settings", label: "Settings" },
-];
-
-const loopStatuses: OpenLoopStatus[] = [
-  "Captured",
-  "Next Action",
-  "In Progress",
-  "Waiting",
-  "Scheduled",
-  "Done",
-  "Dropped",
-];
-const priorities: Priority[] = ["Low", "Medium", "High"];
-const repeatSettings: RepeatSetting[] = ["None", "Daily", "Weekly", "Monthly"];
-const projectStatuses: ProjectStatus[] = [
-  "Idea",
-  "Planning",
-  "Building",
-  "Revising",
-  "Deployed",
-  "Paused",
-  "Archived",
-];
-const aarTypes: AARType[] = ["Daily", "Weekly", "Project", "Custom"];
-
-function activeCategory(categories: Category[], id?: string): Category | undefined {
-  return categories.find((category) => category.id === id);
-}
-
-function textList(value: string): string[] {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+  NoteTools,
+  PlanPicker,
+  TaskEditor,
+  type TaskIntent,
+} from "./components/TaskTools";
+function Icon({ name }: { name: string }) {
   return (
-    <label className="block">
-      <span className="label">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function EmptyState({
-  title,
-  text,
-  action,
-}: {
-  title: string;
-  text: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-dashed border-ink-300 p-5 text-sm text-ink-600 dark:border-ink-700 dark:text-ink-300">
-      <p className="font-semibold text-ink-900 dark:text-ink-50">{title}</p>
-      <p className="mt-1">{text}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
-    </div>
-  );
-}
-
-function Modal({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-ink-950/60 p-3 sm:items-center sm:justify-center">
-      <div className="max-h-[92vh] w-full min-w-0 max-w-full overflow-auto rounded-lg bg-white shadow-soft dark:bg-ink-900 sm:max-w-2xl">
-        <div className="sticky top-0 z-10 flex min-w-0 items-center justify-between gap-3 border-b border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
-          <h2 className="min-w-0 text-lg font-bold">{title}</h2>
-          <button className="btn-ghost min-h-10 px-3" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <div className="p-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function CategorySelect({
-  value,
-  onChange,
-  categories,
-}: {
-  value?: string;
-  onChange: (value: string | undefined) => void;
-  categories: Category[];
-}) {
-  return (
-    <select
-      className="input"
-      value={value || ""}
-      onChange={(event) => onChange(event.target.value || undefined)}
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
     >
-      <option value="">No category</option>
-      {categories
-        .filter((category) => !category.archived)
-        .map((category) => (
-          <option key={category.id} value={category.id}>
-            {category.name}
-          </option>
-        ))}
-    </select>
+      {name === "Today" ? (
+        <>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+        </>
+      ) : name === "Inbox" ? (
+        <>
+          <path d="M4 4h16l2 12v4H2v-4L4 4Z" />
+          <path d="M2 15h6l2 3h4l2-3h6" />
+        </>
+      ) : (
+        <>
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </>
+      )}
+    </svg>
   );
 }
-
-function Layout({
-  page,
-  setPage,
-  onQuickAdd,
-  children,
-}: {
-  page: PageKey;
-  setPage: (page: PageKey) => void;
-  onQuickAdd: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="min-h-screen overflow-x-clip pb-24 lg:pb-0">
-      <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/92 backdrop-blur dark:border-ink-800 dark:bg-ink-950/92">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-700 dark:text-signal-500">
-              LifeOps
-            </p>
-            <h1 className="text-lg font-black sm:text-xl">Command Center</h1>
-          </div>
-          <button className="btn-primary hidden sm:inline-flex" onClick={onQuickAdd}>
-            Quick Add
-          </button>
-        </div>
-      </header>
-
-      <div className="mx-auto grid max-w-7xl min-w-0 gap-5 px-3 py-5 sm:px-4 lg:grid-cols-[230px_minmax(0,1fr)]">
-        <aside className="no-print hidden lg:block">
-          <nav className="sticky top-24 space-y-1">
-            {pages.map((item) => (
-              <button
-                key={item.key}
-                className={`w-full rounded-md px-3 py-3 text-left text-sm font-semibold ${
-                  page === item.key
-                    ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
-                    : "text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800"
-                }`}
-                onClick={() => setPage(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-        <main className="min-w-0 max-w-full">{children}</main>
-      </div>
-
-      <button
-        className="no-print fixed bottom-20 right-4 z-40 h-14 w-14 rounded-full bg-signal-600 text-xl font-black text-white shadow-soft sm:hidden"
-        onClick={onQuickAdd}
-        aria-label="Quick Add"
-      >
-        +
-      </button>
-
-      <nav className="no-print fixed bottom-0 left-0 right-0 z-30 grid min-w-0 grid-cols-6 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-950 lg:hidden">
-        {pages.map((item) => (
-          <button
-            key={item.key}
-            className={`min-h-16 min-w-0 px-0.5 text-[10px] font-semibold leading-tight min-[360px]:text-[11px] ${
-              page === item.key
-                ? "text-signal-700 dark:text-signal-500"
-                : "text-ink-500 dark:text-ink-400"
-            }`}
-            onClick={() => setPage(item.key)}
-          >
-            {item.label.replace("Open ", "").replace("AAR ", "")}
-          </button>
-        ))}
-      </nav>
-    </div>
-  );
-}
-
-function MissionForm({
-  mission,
-  suggestions,
-  onSave,
-}: {
-  mission?: DailyMission;
-  suggestions: OpenLoop[];
-  onSave: (mission: Partial<DailyMission>) => void;
-}) {
-  const [focus, setFocus] = useState(mission?.focus || "");
-  const [topThree, setTopThree] = useState((mission?.topThree || []).join("\n"));
-  const [nonNegotiable, setNonNegotiable] = useState(mission?.nonNegotiable || "");
-  const [avoid, setAvoid] = useState(mission?.avoid || "");
-
-  function toggleSuggestion(loop: OpenLoop) {
-    const current = textList(topThree);
-    if (current.includes(loop.title)) {
-      setTopThree(current.filter((item) => item !== loop.title).join("\n"));
-      return;
-    }
-    if (current.length < 3) setTopThree([...current, loop.title].join("\n"));
-  }
-
-  return (
-    <form
-      className="space-y-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSave({
-          id: mission?.id,
-          date: todayKey(),
-          focus,
-          topThree: textList(topThree),
-          nonNegotiable,
-          avoid,
-        });
-      }}
-    >
-      <Field label="Today's focus">
-        <input
-          className="input"
-          value={focus}
-          onChange={(event) => setFocus(event.target.value)}
-          placeholder="What is the main shape of today?"
-        />
-      </Field>
-      <Field label="Top 3 priorities">
-        <textarea
-          className="input min-h-28"
-          value={topThree}
-          onChange={(event) => setTopThree(event.target.value)}
-          placeholder="One priority per line"
-        />
-      </Field>
-      {suggestions.length ? (
-        <div className="min-w-0">
-          <p className="label">Suggested from open loops</p>
-          <div className="flex flex-wrap gap-2">
-            {suggestions.slice(0, 6).map((loop) => (
-              <button
-                type="button"
-                key={loop.id}
-                className="badge hover:bg-ink-100 dark:hover:bg-ink-800"
-                onClick={() => toggleSuggestion(loop)}
-              >
-                {loop.title}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="One non-negotiable">
-          <input
-            className="input"
-            value={nonNegotiable}
-            onChange={(event) => setNonNegotiable(event.target.value)}
-            placeholder="Small, concrete, doable"
-          />
-        </Field>
-        <Field label="One thing to avoid">
-          <input
-            className="input"
-            value={avoid}
-            onChange={(event) => setAvoid(event.target.value)}
-            placeholder="The trap to watch"
-          />
-        </Field>
-      </div>
-      <button className="btn-primary w-full sm:w-auto" type="submit">
-        Save Mission
-      </button>
-    </form>
-  );
-}
-
-function Dashboard({
-  setPage,
-}: {
-  setPage: (page: PageKey) => void;
-}) {
-  const {
-    data,
-    upsertMission,
-    updateHabit,
-    addAAR,
-    addAvoidance,
-    addOpenLoop,
-    addLesson,
-  } = useLifeOps();
-  const [missionOpen, setMissionOpen] = useState(false);
-  const [minimumOpen, setMinimumOpen] = useState(false);
-  const [avoidOpen, setAvoidOpen] = useState(false);
-  const today = todayKey();
-  const mission = data.missions.find((item) => item.date === today);
-  const activeLoops = data.openLoops.filter(
-    (loop) => !loop.archivedAt && !["Done", "Dropped"].includes(loop.status),
-  );
-  const suggestedLoops = activeLoops
-    .filter(
-      (loop) =>
-        loop.priority === "High" ||
-        isDueSoon(loop) ||
-        needsNextAction(loop) ||
-        isLoopStale(loop, data.settings.staleTaskDays) ||
-        needsFollowUp(loop),
-    )
-    .slice(0, 8);
-  const activeProjects = data.projects.filter((project) => project.status !== "Archived");
-  const activeLesson = data.lessons.find((lesson) => lesson.status === "Active");
-  const habits = data.habits.filter((habit) => habit.active);
-
-  function endDayAAR() {
-    addAAR({
-      title: `Daily AAR - ${formatDate(today)}`,
-      type: "Daily",
-      intendedOutcome: mission?.focus,
-      nextAction: mission?.topThree[0],
-      tags: ["daily"],
-    });
-    setPage("aars");
-  }
-
-  return (
-    <div className="space-y-5">
-      <section className="card border-signal-500/40 bg-signal-50/60 dark:bg-signal-500/10">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-signal-700 dark:text-signal-500">
-              {formatDate(today)}
-            </p>
-            <h2 className="text-2xl font-black">Today's Mission</h2>
-            <p className="mt-2 text-ink-700 dark:text-ink-200">
-              {mission?.focus || "Start with a focused, lightweight plan."}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn-primary" onClick={() => setMissionOpen(true)}>
-              Start Today
-            </button>
-            <button className="btn-secondary" onClick={() => setMissionOpen(true)}>
-              Edit Today
-            </button>
-            <button className="btn-secondary" onClick={endDayAAR}>
-              End-of-Day AAR
-            </button>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 lg:grid-cols-3">
-          <div>
-            <p className="label">Top 3</p>
-            {mission?.topThree.length ? (
-              <ol className="space-y-2">
-                {mission.topThree.map((item, index) => (
-                  <li key={item} className="rounded-md bg-white/80 p-3 dark:bg-ink-900">
-                    {index + 1}. {item}
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-sm text-ink-600 dark:text-ink-300">No priorities chosen yet.</p>
-            )}
-          </div>
-          <div className="rounded-md bg-white/80 p-3 dark:bg-ink-900">
-            <p className="label">Non-negotiable</p>
-            <p>{mission?.nonNegotiable || "Choose one small anchor."}</p>
-          </div>
-          <div className="rounded-md bg-white/80 p-3 dark:bg-ink-900">
-            <p className="label">Avoid</p>
-            <p>{mission?.avoid || "Name the main drift risk."}</p>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="card">
-          <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="min-w-0 text-xl font-bold">Open Loops Snapshot</h2>
-            <button className="btn-secondary" onClick={() => setPage("loops")}>
-              Full Page
-            </button>
-          </div>
-          <div className="space-y-3">
-            {activeLoops.slice(0, 5).map((loop) => (
-              <LoopRow key={loop.id} loop={loop} compact />
-            ))}
-            {!activeLoops.length ? (
-              <EmptyState title="No open loops" text="Capture what is taking up mental space." />
-            ) : null}
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="min-w-0 text-xl font-bold">Projects Snapshot</h2>
-            <button className="btn-secondary" onClick={() => setPage("projects")}>
-              Projects
-            </button>
-          </div>
-          <div className="space-y-3">
-            {activeProjects.slice(0, 4).map((project) => (
-              <ProjectCard key={project.id} project={project} compact />
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <section className="card">
-          <h2 className="text-xl font-bold">Minimum Viable Day</h2>
-          <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-            A reduced version of the day when full strength is not available.
-          </p>
-          <button className="btn-primary mt-4 w-full" onClick={() => setMinimumOpen(true)}>
-            Give Me the Minimum
-          </button>
-        </section>
-
-        <section className="card">
-          <h2 className="text-xl font-bold">What Am I Avoiding?</h2>
-          <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-            Convert avoidance into one visible two-minute action.
-          </p>
-          <button className="btn-secondary mt-4 w-full" onClick={() => setAvoidOpen(true)}>
-            Quick Check-In
-          </button>
-        </section>
-
-        <section className="card">
-          <h2 className="text-xl font-bold">Recent Lesson</h2>
-          {activeLesson ? (
-            <div className="mt-3 space-y-3">
-              <p className="font-semibold">{activeLesson.lesson}</p>
-              <p className="text-sm text-ink-600 dark:text-ink-300">
-                Apply today: {activeLesson.actionToApply || "Keep it visible while choosing next actions."}
-              </p>
-            </div>
-          ) : (
-            <EmptyState title="No active lessons" text="Save one from an AAR or add it manually." />
-          )}
-        </section>
-      </div>
-
-      <section className="card">
-        <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="min-w-0 text-xl font-bold">Minimal Habit Check-In</h2>
-          <span className="badge">Supportive, not streak-based</span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {habits.map((habit) => {
-            const checked = habit.completedDates.includes(today);
-            const completedThisWeek = habit.completedDates.filter(isThisWeek).length;
-            return (
-              <label key={habit.id} className="panel flex min-h-24 items-start gap-3 p-3">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-5 w-5 accent-signal-600"
-                  checked={checked}
-                  onChange={(event) => {
-                    updateHabit(habit.id, {
-                      completedDates: event.target.checked
-                        ? Array.from(new Set([...habit.completedDates, today]))
-                        : habit.completedDates.filter((date) => date !== today),
-                    });
-                  }}
-                />
-                <span>
-                  <span className="block font-semibold">{habit.name}</span>
-                  <span className="mt-1 block text-sm text-ink-600 dark:text-ink-300">
-                    Completed this week: {completedThisWeek}
-                    {habit.targetPerWeek ? ` / target ${habit.targetPerWeek}` : ""}
-                  </span>
-                  {habit.minimumVersion ? (
-                    <span className="mt-1 block text-xs text-ink-500 dark:text-ink-400">
-                      Minimum: {habit.minimumVersion}
-                    </span>
-                  ) : null}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </section>
-
-      {missionOpen ? (
-        <Modal title="Start Today" onClose={() => setMissionOpen(false)}>
-          <MissionForm
-            mission={mission}
-            suggestions={suggestedLoops}
-            onSave={(next) => {
-              upsertMission(next);
-              setMissionOpen(false);
-            }}
-          />
-        </Modal>
-      ) : null}
-
-      {minimumOpen ? (
-        <Modal title="Minimum Viable Day" onClose={() => setMinimumOpen(false)}>
-          <div className="space-y-3">
-            {data.settings.minimumDayDefaults.map((action) => (
-              <label key={action} className="panel flex items-center gap-3 p-3">
-                <input type="checkbox" className="h-5 w-5 accent-signal-600" />
-                <span>{action}</span>
-              </label>
-            ))}
-          </div>
-        </Modal>
-      ) : null}
-
-      {avoidOpen ? (
-        <AvoidanceModal
-          onClose={() => setAvoidOpen(false)}
-          onSave={(checkIn) => {
-            const saved = addAvoidance(checkIn);
-            if (saved.twoMinuteAction) {
-              addOpenLoop({
-                title: saved.twoMinuteAction,
-                categoryId: saved.categoryId,
-                status: "Next Action",
-                priority: "Medium",
-                notes: `Created from avoidance check-in: ${saved.avoidedThing}`,
-              });
-            }
-            if (saved.reason) {
-              addLesson({
-                lesson: `Avoidance signal: ${saved.avoidedThing}`,
-                categoryId: saved.categoryId,
-                sourceType: "Avoidance Check-In",
-                sourceId: saved.id,
-                actionToApply: saved.twoMinuteAction,
-              });
-            }
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function AvoidanceModal({
-  onClose,
-  onSave,
-}: {
-  onClose: () => void;
-  onSave: (checkIn: Partial<AvoidanceCheckIn> & Pick<AvoidanceCheckIn, "avoidedThing">) => void;
-}) {
-  const { data } = useLifeOps();
-  const [avoidedThing, setAvoidedThing] = useState("");
-  const [reason, setReason] = useState("");
-  const [twoMinuteAction, setTwoMinuteAction] = useState("");
-  const [categoryId, setCategoryId] = useState<string | undefined>();
-
-  return (
-    <Modal title="What Am I Avoiding?" onClose={onClose}>
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!avoidedThing.trim()) return;
-          onSave({ avoidedThing, reason, twoMinuteAction, categoryId });
-          onClose();
-        }}
-      >
-        <Field label="What am I avoiding?">
-          <input className="input" value={avoidedThing} onChange={(event) => setAvoidedThing(event.target.value)} />
-        </Field>
-        <Field label="Why am I avoiding it?">
-          <textarea className="input" value={reason} onChange={(event) => setReason(event.target.value)} />
-        </Field>
-        <Field label="Next 2-minute action">
-          <input className="input" value={twoMinuteAction} onChange={(event) => setTwoMinuteAction(event.target.value)} />
-        </Field>
-        <Field label="Category">
-          <CategorySelect categories={data.categories} value={categoryId} onChange={setCategoryId} />
-        </Field>
-        <button className="btn-primary w-full sm:w-auto" type="submit">
-          Save Check-In
-        </button>
-      </form>
-    </Modal>
-  );
-}
-
-function LoopRow({
-  loop,
-  compact = false,
-  onEdit,
-}: {
-  loop: OpenLoop;
-  compact?: boolean;
-  onEdit?: (loop: OpenLoop) => void;
-}) {
-  const { data, updateOpenLoop } = useLifeOps();
-  const stale = isLoopStale(loop, data.settings.staleTaskDays);
-  const unclear = needsNextAction(loop);
-  const followUp = needsFollowUp(loop);
-  const category = activeCategory(data.categories, loop.categoryId);
-  return (
-    <article className={`panel p-3 ${stale || unclear || followUp ? "border-amberline-500/60" : ""}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-bold">{loop.title}</h3>
-            <span className="badge">{loop.priority}</span>
-            <span className="badge">{loop.status}</span>
-            {category ? <span className="badge">{category.name}</span> : null}
-          </div>
-          {!compact && loop.nextAction ? (
-            <p className="mt-2 text-sm text-ink-700 dark:text-ink-200">Next: {loop.nextAction}</p>
-          ) : null}
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {stale ? <span className="badge warning">Stale</span> : null}
-            {unclear ? <span className="badge warning">Needs next action</span> : null}
-            {followUp ? <span className="badge warning">Follow up</span> : null}
-            {loop.dueDate ? <span className="badge">Due {formatDate(loop.dueDate)}</span> : null}
-          </div>
-          {!compact ? (
-            <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">
-              Suggestion: {suggestForLoop(loop, data.settings.staleTaskDays)}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {onEdit ? (
-            <button className="btn-secondary min-h-10 px-3" onClick={() => onEdit(loop)}>
-              Edit
-            </button>
-          ) : null}
-          {!["Done", "Dropped"].includes(loop.status) ? (
-            <button
-              className="btn-secondary min-h-10 px-3"
-              onClick={() => updateOpenLoop(loop.id, { status: "Done", completedAt: new Date().toISOString() })}
-            >
-              Done
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function OpenLoopsPage() {
-  const { data, addOpenLoop, updateOpenLoop, addProject } = useLifeOps();
-  const [editing, setEditing] = useState<OpenLoop | null>(null);
-  const [filter, setFilter] = useState("All");
-  const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState<string | undefined>();
-  const views = ["All", "Next Action", "Waiting", "Due Soon", "Stale", "Done", "Dropped"];
-
-  const filtered = data.openLoops.filter((loop) => {
-    if (loop.archivedAt) return false;
-    if (categoryId && loop.categoryId !== categoryId) return false;
-    if (search && !`${loop.title} ${loop.nextAction || ""} ${loop.notes || ""}`.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filter === "All") return true;
-    if (filter === "Due Soon") return loop.dueDate ? loop.dueDate <= addDays(todayKey(), 7) : false;
-    if (filter === "Stale") return isLoopStale(loop, data.settings.staleTaskDays);
-    return loop.status === filter;
-  });
-
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Open Loops"
-        subtitle="Capture, clarify, and keep attention on the next visible action."
-        action={<button className="btn-primary" onClick={() => setEditing({ id: "", title: "", status: "Captured", priority: "Medium", createdAt: "", updatedAt: "", lastTouchedAt: "" })}>Quick Add</button>}
-      />
-      <section className="card space-y-3">
-        <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-          <input className="input" placeholder="Search open loops" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <CategorySelect categories={data.categories} value={categoryId} onChange={setCategoryId} />
-        </div>
-        <div className="flex max-w-full flex-wrap gap-2 pb-1">
-          {views.map((view) => (
-            <button key={view} className={filter === view ? "btn-primary" : "btn-secondary"} onClick={() => setFilter(view)}>
-              {view}
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="space-y-3">
-        {filtered.map((loop) => (
-          <LoopRow key={loop.id} loop={loop} onEdit={setEditing} />
-        ))}
-        {!filtered.length ? <EmptyState title="No matching open loops" text="Try another view or capture one small loop." /> : null}
-      </section>
-      {editing ? (
-        <LoopModal
-          loop={editing.id ? editing : undefined}
-          onClose={() => setEditing(null)}
-          onSave={(loop) => {
-            if (editing.id) updateOpenLoop(editing.id, loop);
-            else addOpenLoop({ ...loop, title: loop.title || "Untitled loop" });
-            setEditing(null);
-          }}
-          onConvert={(loop) => {
-            const project = addProject({
-              name: loop.title,
-              categoryId: loop.categoryId,
-              status: "Planning",
-              currentObjective: loop.notes,
-              nextAction: loop.nextAction,
-            });
-            updateOpenLoop(loop.id, { relatedProjectId: project.id, status: "Done", completedAt: new Date().toISOString() });
-            setEditing(null);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function LoopModal({
-  loop,
-  onClose,
-  onSave,
-  onConvert,
-}: {
-  loop?: OpenLoop;
-  onClose: () => void;
-  onSave: (loop: Partial<OpenLoop> & { title?: string }) => void;
-  onConvert: (loop: OpenLoop) => void;
-}) {
-  const { data } = useLifeOps();
-  const [draft, setDraft] = useState<Partial<OpenLoop>>(loop || { priority: "Medium", status: "Captured", repeat: "None" });
-
-  function set<K extends keyof OpenLoop>(key: K, value: OpenLoop[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  return (
-    <Modal title={loop ? "Edit Open Loop" : "Quick Add Open Loop"} onClose={onClose}>
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSave(draft as Partial<OpenLoop> & { title?: string });
-        }}
-      >
-        <Field label="Title">
-          <input className="input" required value={draft.title || ""} onChange={(event) => set("title", event.target.value)} />
-        </Field>
-        <Field label="Next action">
-          <input className="input" value={draft.nextAction || ""} onChange={(event) => set("nextAction", event.target.value)} />
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Category">
-            <CategorySelect categories={data.categories} value={draft.categoryId} onChange={(value) => set("categoryId", value)} />
-          </Field>
-          <Field label="Status">
-            <select className="input" value={draft.status || "Captured"} onChange={(event) => set("status", event.target.value as OpenLoopStatus)}>
-              {loopStatuses.map((status) => <option key={status}>{status}</option>)}
-            </select>
-          </Field>
-          <Field label="Priority">
-            <select className="input" value={draft.priority || "Medium"} onChange={(event) => set("priority", event.target.value as Priority)}>
-              {priorities.map((priority) => <option key={priority}>{priority}</option>)}
-            </select>
-          </Field>
-        </div>
-        <details className="space-y-3">
-          <summary className="cursor-pointer text-sm font-semibold text-ink-700 dark:text-ink-200">Optional details</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Field label="Due date">
-              <input className="input" type="date" value={draft.dueDate || ""} onChange={(event) => set("dueDate", event.target.value)} />
-            </Field>
-            <Field label="Follow-up date">
-              <input className="input" type="date" value={draft.followUpDate || ""} onChange={(event) => set("followUpDate", event.target.value)} />
-            </Field>
-            <Field label="Repeat">
-              <select className="input" value={draft.repeat || "None" as RepeatSetting} onChange={(event) => set("repeat", event.target.value as RepeatSetting)}>
-                {repeatSettings.map((repeat) => <option key={repeat}>{repeat}</option>)}
-              </select>
-            </Field>
-          </div>
-          <Field label="Notes">
-            <textarea className="input min-h-28" value={draft.notes || ""} onChange={(event) => set("notes", event.target.value)} />
-          </Field>
-        </details>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" type="submit">Save</button>
-          {loop ? <button className="btn-secondary" type="button" onClick={() => onSave({ status: "Dropped" })}>Drop</button> : null}
-          {loop ? <button className="btn-secondary" type="button" onClick={() => onSave({ archivedAt: new Date().toISOString() })}>Archive</button> : null}
-          {loop ? <button className="btn-secondary" type="button" onClick={() => onConvert(loop)}>Convert to Project</button> : null}
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function ProjectCard({
-  project,
-  compact = false,
-  onEdit,
-}: {
-  project: Project;
-  compact?: boolean;
-  onEdit?: (project: Project) => void;
-}) {
-  const { data, addOpenLoop, updateProject } = useLifeOps();
-  const stale = isProjectStale(project, data.settings.staleProjectDays);
-  return (
-    <article className={`panel p-3 ${stale ? "border-amberline-500/60" : ""}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-bold">{project.name}</h3>
-            <span className="badge">{project.status}</span>
-            {stale ? <span className="badge warning">Stale</span> : null}
-          </div>
-          <p className="mt-2 text-sm text-ink-700 dark:text-ink-200">
-            {project.currentObjective || "No current objective set."}
-          </p>
-          {!compact ? (
-            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-              Next: {suggestForProject(project, data.settings.staleProjectDays)}
-            </p>
-          ) : null}
-          <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">
-            Last worked: {project.lastWorkedAt ? formatDate(project.lastWorkedAt.slice(0, 10)) : "Not set"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {onEdit ? <button className="btn-secondary min-h-10 px-3" onClick={() => onEdit(project)}>Edit</button> : null}
-          {!compact ? (
-            <>
-              <button
-                className="btn-secondary min-h-10 px-3"
-                onClick={() => {
-                  if (project.nextAction) {
-                    addOpenLoop({ title: project.nextAction, categoryId: project.categoryId, status: "Next Action", priority: "Medium", relatedProjectId: project.id });
-                  }
-                }}
-              >
-                Add Next Action
-              </button>
-              <button className="btn-secondary min-h-10 px-3" onClick={() => updateProject(project.id, { lastWorkedAt: new Date().toISOString() })}>
-                Touched
-              </button>
-            </>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ProjectsPage({ setPage }: { setPage: (page: PageKey) => void }) {
-  const { data, addProject, updateProject, addAAR } = useLifeOps();
-  const [editing, setEditing] = useState<Project | null>(null);
-  const active = data.projects.filter((project) => project.status !== "Archived");
-
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Projects"
-        subtitle="Active personal projects without turning the app into a kanban board."
-        action={<button className="btn-primary" onClick={() => setEditing({ id: "", name: "", status: "Idea", createdAt: "", updatedAt: "" })}>Create Project</button>}
-      />
-      <section className="space-y-3">
-        {active.map((project) => (
-          <div key={project.id} className="space-y-2">
-            <ProjectCard project={project} onEdit={setEditing} />
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn-secondary min-h-10 px-3"
-                onClick={() => {
-                  addAAR({ title: `${project.name} AAR`, type: "Project", relatedProjectId: project.id, intendedOutcome: project.currentObjective, nextAction: project.nextAction });
-                  setPage("aars");
-                }}
-              >
-                Start Project AAR
-              </button>
-              <button className="btn-secondary min-h-10 px-3" onClick={() => updateProject(project.id, { status: "Archived", archivedAt: new Date().toISOString() })}>
-                Archive
-              </button>
-            </div>
-          </div>
-        ))}
-      </section>
-      {editing ? (
-        <ProjectModal
-          project={editing.id ? editing : undefined}
-          onClose={() => setEditing(null)}
-          onSave={(project) => {
-            if (editing.id) updateProject(editing.id, project);
-            else addProject({ ...project, name: project.name || "Untitled project" });
-            setEditing(null);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function ProjectModal({
-  project,
-  onClose,
-  onSave,
-}: {
-  project?: Project;
-  onClose: () => void;
-  onSave: (project: Partial<Project> & { name?: string }) => void;
-}) {
-  const { data } = useLifeOps();
-  const [draft, setDraft] = useState<Partial<Project>>(project || { status: "Idea", links: [] });
-  function set<K extends keyof Project>(key: K, value: Project[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-  return (
-    <Modal title={project ? "Edit Project" : "Create Project"} onClose={onClose}>
-      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave(draft as Partial<Project> & { name?: string }); }}>
-        <Field label="Name"><input className="input" required value={draft.name || ""} onChange={(event) => set("name", event.target.value)} /></Field>
-        <Field label="Current objective"><input className="input" value={draft.currentObjective || ""} onChange={(event) => set("currentObjective", event.target.value)} /></Field>
-        <Field label="Next action"><input className="input" value={draft.nextAction || ""} onChange={(event) => set("nextAction", event.target.value)} /></Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Category"><CategorySelect categories={data.categories} value={draft.categoryId} onChange={(value) => set("categoryId", value)} /></Field>
-          <Field label="Status">
-            <select className="input" value={draft.status || "Idea"} onChange={(event) => set("status", event.target.value as ProjectStatus)}>
-              {projectStatuses.map((status) => <option key={status}>{status}</option>)}
-            </select>
-          </Field>
-        </div>
-        <Field label="Notes"><textarea className="input min-h-28" value={draft.notes || ""} onChange={(event) => set("notes", event.target.value)} /></Field>
-        <button className="btn-primary" type="submit">Save Project</button>
-      </form>
-    </Modal>
-  );
-}
-
-function AARPage() {
-  const { data, addAAR, updateAAR, addOpenLoop, addLesson } = useLifeOps();
-  const [editing, setEditing] = useState<AARReview | null>(null);
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="AAR Reviews"
-        subtitle="Short, structured reviews that produce sustains, improves, lessons, and next actions."
-        action={<button className="btn-primary" onClick={() => setEditing({ id: "", title: "", type: "Daily", date: todayKey(), tags: [], createdAt: "", updatedAt: "" })}>New AAR</button>}
-      />
-      <section className="space-y-3">
-        {data.aarReviews.map((review) => (
-          <article key={review.id} className="card">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-lg font-bold">{review.title}</h3>
-                  <span className="badge">{review.type}</span>
-                  <span className="badge">{formatDate(review.date)}</span>
-                </div>
-                <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-                  {review.actualOutcome || review.intendedOutcome || "Open this review to complete the template."}
-                </p>
-                <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">
-                  Suggestion: {suggestFromAAR(review)}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn-secondary min-h-10 px-3" onClick={() => setEditing(review)}>Edit</button>
-                <button className="btn-secondary min-h-10 px-3" onClick={() => exportAarMarkdown(review)}>Markdown</button>
-                <button className="btn-secondary min-h-10 px-3" onClick={() => window.print()}>Print PDF</button>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <SummaryBlock title="Sustain" value={review.sustain} />
-              <SummaryBlock title="Improve" value={review.improve} />
-              <SummaryBlock title="Next Action" value={review.nextAction} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {review.nextAction ? (
-                <button className="btn-secondary min-h-10 px-3" onClick={() => addOpenLoop({ title: review.nextAction || "AAR next action", status: "Next Action", priority: "Medium", relatedProjectId: review.relatedProjectId })}>
-                  Add Next Action to Open Loops
-                </button>
-              ) : null}
-              {(review.sustain || review.improve) ? (
-                <button className="btn-secondary min-h-10 px-3" onClick={() => addLesson({ lesson: review.improve || review.sustain || "AAR lesson", sourceType: "AAR", sourceId: review.id, actionToApply: review.nextAction, categoryId: review.categoryId })}>
-                  Save Lesson
-                </button>
-              ) : null}
-            </div>
-          </article>
-        ))}
-        {!data.aarReviews.length ? <EmptyState title="No AARs yet" text="Start with a daily review. Two minutes is enough." /> : null}
-      </section>
-      {editing ? (
-        <AARModal
-          review={editing.id ? editing : undefined}
-          onClose={() => setEditing(null)}
-          onSave={(review) => {
-            if (editing.id) updateAAR(editing.id, review);
-            else addAAR({ ...review, title: review.title || `${review.type || "Daily"} AAR`, type: review.type || "Daily" });
-            setEditing(null);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function SummaryBlock({ title, value }: { title: string; value?: string }) {
-  return (
-    <div className="rounded-md bg-ink-50 p-3 dark:bg-ink-950">
-      <p className="label">{title}</p>
-      <p className="text-sm">{value || "Not captured yet."}</p>
-    </div>
-  );
-}
-
-function AARModal({
-  review,
-  onClose,
-  onSave,
-}: {
-  review?: AARReview;
-  onClose: () => void;
-  onSave: (review: Partial<AARReview> & { title?: string; type?: AARType }) => void;
-}) {
-  const { data } = useLifeOps();
-  const [draft, setDraft] = useState<Partial<AARReview>>(review || { type: "Daily", date: todayKey(), tags: [] });
-  function set<K extends keyof AARReview>(key: K, value: AARReview[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-  const prompts = {
-    Daily: ["What was the plan today?", "What actually happened?", "What went well?", "What got avoided or went wrong?", "What should I sustain tomorrow?", "What should I improve tomorrow?", "What is one next action?"],
-    Weekly: ["What was the mission this week?", "What got completed?", "What stayed stuck?", "What pattern showed up?", "What should I sustain?", "What should I improve?", "What is next week's main mission?"],
-    Project: ["What was the project objective?", "What changed from the original plan?", "What got completed?", "What blockers came up?", "What did I learn?", "What is the next build step?"],
-    Custom: ["What was supposed to happen?", "What actually happened?", "What should change next?"],
-  }[draft.type || "Daily"];
-  return (
-    <Modal title={review ? "Edit AAR" : "New AAR"} onClose={onClose}>
-      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave(draft as Partial<AARReview> & { title?: string; type?: AARType }); }}>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Type">
-            <select className="input" value={draft.type || "Daily"} onChange={(event) => set("type", event.target.value as AARType)}>
-              {aarTypes.map((type) => <option key={type}>{type}</option>)}
-            </select>
-          </Field>
-          <Field label="Date"><input type="date" className="input" value={draft.date || todayKey()} onChange={(event) => set("date", event.target.value)} /></Field>
-          <Field label="Category"><CategorySelect categories={data.categories} value={draft.categoryId} onChange={(value) => set("categoryId", value)} /></Field>
-        </div>
-        <Field label="Title"><input className="input" value={draft.title || ""} onChange={(event) => set("title", event.target.value)} /></Field>
-        <div className="rounded-md bg-ink-50 p-3 text-sm dark:bg-ink-950">
-          <p className="font-semibold">Template prompts</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-ink-600 dark:text-ink-300">
-            {prompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
-          </ol>
-        </div>
-        <Field label="What was supposed to happen?"><textarea className="input" value={draft.intendedOutcome || ""} onChange={(event) => set("intendedOutcome", event.target.value)} /></Field>
-        <Field label="What actually happened?"><textarea className="input" value={draft.actualOutcome || ""} onChange={(event) => set("actualOutcome", event.target.value)} /></Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="What went well?"><textarea className="input" value={draft.wentWell || ""} onChange={(event) => set("wentWell", event.target.value)} /></Field>
-          <Field label="What went wrong or got avoided?"><textarea className="input" value={draft.wentWrong || ""} onChange={(event) => set("wentWrong", event.target.value)} /></Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Sustain"><textarea className="input" value={draft.sustain || ""} onChange={(event) => set("sustain", event.target.value)} /></Field>
-          <Field label="Improve"><textarea className="input" value={draft.improve || ""} onChange={(event) => set("improve", event.target.value)} /></Field>
-          <Field label="Next action"><textarea className="input" value={draft.nextAction || ""} onChange={(event) => set("nextAction", event.target.value)} /></Field>
-        </div>
-        <Field label="Tags">
-          <input className="input" value={(draft.tags || []).join(", ")} onChange={(event) => set("tags", event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean))} placeholder="comma separated" />
-        </Field>
-        <button className="btn-primary" type="submit">Save Review</button>
-      </form>
-    </Modal>
-  );
-}
-
-function LessonsPage() {
-  const { data, addLesson, updateLesson } = useLifeOps();
-  const [editing, setEditing] = useState<LessonLearned | null>(null);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("Active");
-  const lessons = data.lessons.filter((lesson) => {
-    if (status !== "All" && lesson.status !== status) return false;
-    return !search || `${lesson.lesson} ${lesson.actionToApply || ""}`.toLowerCase().includes(search.toLowerCase());
-  });
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Lessons Learned"
-        subtitle="A library of useful patterns from reviews, check-ins, projects, and failures."
-        action={<button className="btn-primary" onClick={() => setEditing({ id: "", lesson: "", status: "Active", createdAt: "", updatedAt: "" })}>Add Lesson</button>}
-      />
-      <section className="card grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
-        <input className="input" placeholder="Search lessons" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
-          {["All", "Active", "Applied", "Archived"].map((item) => <option key={item}>{item}</option>)}
-        </select>
-        <button className="btn-secondary" onClick={() => exportLessonsMarkdown(data.lessons)}>Export Markdown</button>
-      </section>
-      <section className="space-y-3">
-        {lessons.map((lesson) => (
-          <article key={lesson.id} className="card">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-bold">{lesson.lesson}</h3>
-                  <span className="badge">{lesson.status}</span>
-                  {lesson.sourceType ? <span className="badge">{lesson.sourceType}</span> : null}
-                </div>
-                <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
-                  Apply: {lesson.actionToApply || "Keep visible during planning."}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn-secondary min-h-10 px-3" onClick={() => setEditing(lesson)}>Edit</button>
-                <button className="btn-secondary min-h-10 px-3" onClick={() => updateLesson(lesson.id, { status: "Applied", lastReviewedAt: new Date().toISOString() })}>Applied</button>
-                <button className="btn-secondary min-h-10 px-3" onClick={() => updateLesson(lesson.id, { status: "Archived" })}>Archive</button>
-              </div>
-            </div>
-          </article>
-        ))}
-      </section>
-      {editing ? (
-        <LessonModal
-          lesson={editing.id ? editing : undefined}
-          onClose={() => setEditing(null)}
-          onSave={(lesson) => {
-            if (editing.id) updateLesson(editing.id, lesson);
-            else addLesson({ ...lesson, lesson: lesson.lesson || "Untitled lesson" });
-            setEditing(null);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function LessonModal({
-  lesson,
-  onClose,
-  onSave,
-}: {
-  lesson?: LessonLearned;
-  onClose: () => void;
-  onSave: (lesson: Partial<LessonLearned> & { lesson?: string }) => void;
-}) {
-  const { data } = useLifeOps();
-  const [draft, setDraft] = useState<Partial<LessonLearned>>(lesson || { status: "Active", sourceType: "Manual" });
-  function set<K extends keyof LessonLearned>(key: K, value: LessonLearned[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-  return (
-    <Modal title={lesson ? "Edit Lesson" : "Add Lesson"} onClose={onClose}>
-      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSave(draft as Partial<LessonLearned> & { lesson?: string }); }}>
-        <Field label="Lesson"><textarea className="input" required value={draft.lesson || ""} onChange={(event) => set("lesson", event.target.value)} /></Field>
-        <Field label="Action to apply"><input className="input" value={draft.actionToApply || ""} onChange={(event) => set("actionToApply", event.target.value)} /></Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Category"><CategorySelect categories={data.categories} value={draft.categoryId} onChange={(value) => set("categoryId", value)} /></Field>
-          <Field label="Status">
-            <select className="input" value={draft.status || "Active"} onChange={(event) => set("status", event.target.value as LessonLearned["status"])}>
-              {["Active", "Applied", "Archived"].map((item) => <option key={item}>{item}</option>)}
-            </select>
-          </Field>
-        </div>
-        <button className="btn-primary" type="submit">Save Lesson</button>
-      </form>
-    </Modal>
-  );
-}
-
-function SettingsPage() {
-  const { data, updateSettings, updateCategory, addCategory, replaceData, resetData } = useLifeOps();
-  const [newCategory, setNewCategory] = useState("");
-  const [minimumDefaults, setMinimumDefaults] = useState(data.settings.minimumDayDefaults.join("\n"));
-  return (
-    <div className="space-y-5">
-      <PageHeader title="Settings" subtitle="Local data, theme, categories, thresholds, and backups." />
-      <section className="card grid gap-4 md:grid-cols-2">
-        <Field label="Theme">
-          <select className="input" value={data.settings.theme} onChange={(event) => updateSettings({ theme: event.target.value as typeof data.settings.theme })}>
-            {["system", "light", "dark"].map((item) => <option key={item}>{item}</option>)}
-          </select>
-        </Field>
-        <Field label="AI suggestions">
-          <select className="input" value={data.settings.aiSuggestionsEnabled ? "on" : "off"} onChange={(event) => updateSettings({ aiSuggestionsEnabled: event.target.value === "on" })}>
-            <option value="off">Off</option>
-            <option value="on">On, local wrapper only</option>
-          </select>
-        </Field>
-        <Field label="Stale task threshold">
-          <input className="input" type="number" min={1} value={data.settings.staleTaskDays} onChange={(event) => updateSettings({ staleTaskDays: Number(event.target.value) })} />
-        </Field>
-        <Field label="Stale project threshold">
-          <input className="input" type="number" min={1} value={data.settings.staleProjectDays} onChange={(event) => updateSettings({ staleProjectDays: Number(event.target.value) })} />
-        </Field>
-      </section>
-      <section className="card space-y-3">
-        <h2 className="text-xl font-bold">Data Backup</h2>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" onClick={() => exportDataJson(data)}>Export JSON</button>
-          <label className="btn-secondary cursor-pointer">
-            Import JSON
-            <input
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                const imported = await importDataFromFile(file);
-                replaceData(imported);
-              }}
-            />
-          </label>
-          <button
-            className="btn-danger"
-            onClick={() => {
-              if (window.confirm("Clear local LifeOps data and restore editable seed data?")) void resetData();
-            }}
-          >
-            Clear Local Data
-          </button>
-        </div>
-      </section>
-      <section className="card space-y-3">
-        <h2 className="text-xl font-bold">Categories</h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {data.categories.map((category) => (
-            <div key={category.id} className="panel flex min-w-0 flex-col gap-2 p-2 min-[390px]:flex-row min-[390px]:items-center">
-              <span className="h-4 w-4 flex-none rounded-full" style={{ backgroundColor: category.color || "#64748b" }} />
-              <input className="input min-h-10 min-w-0 flex-1" value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} />
-              <button className="btn-secondary min-h-10 px-3" onClick={() => updateCategory(category.id, { archived: !category.archived })}>
-                {category.archived ? "Unarchive" : "Archive"}
-              </button>
-            </div>
-          ))}
-        </div>
-        <form className="flex min-w-0 flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); if (newCategory.trim()) { addCategory(newCategory.trim()); setNewCategory(""); } }}>
-          <input className="input min-w-0 flex-1" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Add category" />
-          <button className="btn-primary" type="submit">Add</button>
-        </form>
-      </section>
-      <section className="card space-y-3">
-        <h2 className="text-xl font-bold">Minimum Viable Day Defaults</h2>
-        <textarea className="input min-h-36" value={minimumDefaults} onChange={(event) => setMinimumDefaults(event.target.value)} />
-        <button className="btn-primary" onClick={() => updateSettings({ minimumDayDefaults: minimumDefaults.split("\n").map((item) => item.trim()).filter(Boolean) })}>
-          Save Defaults
-        </button>
-      </section>
-    </div>
-  );
-}
-
-function PageHeader({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h2 className="text-2xl font-black">{title}</h2>
-        <p className="mt-1 max-w-3xl text-sm text-ink-600 dark:text-ink-300">{subtitle}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function QuickAddModal({ onClose, setPage }: { onClose: () => void; setPage: (page: PageKey) => void }) {
-  const { data, addOpenLoop, addProject, addAAR, addLesson, addHabit, addAvoidance } = useLifeOps();
-  const [kind, setKind] = useState<QuickAddKind>("Open Loop");
-  const [title, setTitle] = useState("");
-  const [categoryId, setCategoryId] = useState<string | undefined>();
-  const [priority, setPriority] = useState<Priority>("Medium");
-  const [nextAction, setNextAction] = useState("");
-  const [notes, setNotes] = useState("");
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    if (kind === "Open Loop") {
-      addOpenLoop({ title, categoryId, priority, nextAction, notes, status: nextAction ? "Next Action" : "Captured" });
-      setPage("loops");
-    }
-    if (kind === "Project") {
-      addProject({ name: title, categoryId, nextAction, currentObjective: notes, status: "Idea" });
-      setPage("projects");
-    }
-    if (kind === "AAR") {
-      addAAR({ title, type: "Daily", categoryId, nextAction, actualOutcome: notes });
-      setPage("aars");
-    }
-    if (kind === "Lesson") {
-      addLesson({ lesson: title, categoryId, actionToApply: nextAction || notes });
-      setPage("lessons");
-    }
-    if (kind === "Habit") {
-      addHabit({ name: title, categoryId, minimumVersion: nextAction || notes });
-      setPage("dashboard");
-    }
-    if (kind === "Avoidance Check-In") {
-      addAvoidance({ avoidedThing: title, categoryId, twoMinuteAction: nextAction, reason: notes });
-      setPage("dashboard");
-    }
-    onClose();
-  }
-
-  return (
-    <Modal title="Quick Add" onClose={onClose}>
-      <form className="space-y-4" onSubmit={submit}>
-        <Field label="Capture type">
-          <select className="input" value={kind} onChange={(event) => setKind(event.target.value as QuickAddKind)}>
-            {["Open Loop", "Project", "AAR", "Lesson", "Avoidance Check-In", "Habit"].map((item) => <option key={item}>{item}</option>)}
-          </select>
-        </Field>
-        <Field label={kind === "Avoidance Check-In" ? "What am I avoiding?" : "Title"}>
-          <input className="input" autoFocus required value={title} onChange={(event) => setTitle(event.target.value)} />
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Category"><CategorySelect categories={data.categories} value={categoryId} onChange={setCategoryId} /></Field>
-          {kind === "Open Loop" ? (
-            <Field label="Priority">
-              <select className="input" value={priority} onChange={(event) => setPriority(event.target.value as Priority)}>
-                {priorities.map((item) => <option key={item}>{item}</option>)}
-              </select>
-            </Field>
-          ) : null}
-        </div>
-        <Field label={kind === "Habit" ? "Minimum version" : "Next action"}>
-          <input className="input" value={nextAction} onChange={(event) => setNextAction(event.target.value)} />
-        </Field>
-        <details>
-          <summary className="cursor-pointer text-sm font-semibold text-ink-700 dark:text-ink-200">Optional note</summary>
-          <textarea className="input mt-3 min-h-24" value={notes} onChange={(event) => setNotes(event.target.value)} />
-        </details>
-        <button className="btn-primary w-full sm:w-auto" type="submit">Save</button>
-      </form>
-    </Modal>
-  );
-}
-
 export function App() {
-  const { ready } = useLifeOps();
-  const [page, setPage] = useState<PageKey>("dashboard");
-  const [quickAdd, setQuickAdd] = useState(false);
-
-  const content = useMemo(() => {
-    if (page === "dashboard") return <Dashboard setPage={setPage} />;
-    if (page === "loops") return <OpenLoopsPage />;
-    if (page === "projects") return <ProjectsPage setPage={setPage} />;
-    if (page === "aars") return <AARPage />;
-    if (page === "lessons") return <LessonsPage />;
-    return <SettingsPage />;
-  }, [page]);
-
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-ink-950 text-white">
-        <div className="text-center">
-          <p className="text-sm uppercase tracking-[0.18em] text-signal-500">LifeOps</p>
-          <p className="mt-2 text-xl font-bold">Loading command center</p>
-        </div>
-      </div>
-    );
+  const { ready, error, clearError, commit } = useLifeOps();
+  const [page, setPage] = useState("Today");
+  const [date, setDate] = useState(todayKey());
+  const [capture, setCapture] = useState(false);
+  const [intent, setIntent] = useState<TaskIntent | null>(null);
+  const [plan, setPlan] = useState(false);
+  const [note, setNote] = useState<CapturedNote | null>(null);
+  const [toast, setToast] = useState("");
+  const [undo, setUndo] = useState<OpenLoop | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scroll = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const tick = () => setDate(todayKey());
+    const id = setInterval(tick, 10000);
+    window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+  function notify(message: string) {
+    setToast(message);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setToast(""), 6000);
   }
-
+  useEffect(() => () => clearTimeout(timer.current), []);
+  function done(t: OpenLoop) {
+    const completing = t.status !== "Done";
+    if (commit((d) => completeTask(d, t.id, date, completing))) {
+      setUndo(completing ? t : null);
+      notify(
+        completing
+          ? t.relatedProjectId
+            ? "Done. Choose the next action in Projects when you’re ready."
+            : "Done. A little more room."
+          : "Task restored",
+      );
+    }
+  }
+  function navigate(next: string) {
+    scroll.current[page] = window.scrollY;
+    setPage(next);
+    requestAnimationFrame(() => window.scrollTo(0, scroll.current[next] || 0));
+  }
+  if (!ready)
+    return (
+      <main className="loading">
+        <h1>LifeOps</h1>
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button
+              className="primary"
+              onClick={() => window.location.reload()}
+            >
+              Try again
+            </button>
+            <button className="quiet" onClick={downloadRecovery}>
+              Download recovery copies
+            </button>
+          </>
+        ) : (
+          <p>Opening your space…</p>
+        )}
+      </main>
+    );
   return (
-    <Layout page={page} setPage={setPage} onQuickAdd={() => setQuickAdd(true)}>
-      {content}
-      {quickAdd ? <QuickAddModal onClose={() => setQuickAdd(false)} setPage={setPage} /> : null}
-    </Layout>
+    <div className="app-shell">
+      <header className="topbar">
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            navigate("Today");
+          }}
+          className="wordmark"
+        >
+          <span aria-hidden="true" className="logo-mark">
+            ◒
+          </span>{" "}
+          lifeops
+        </a>
+        <button
+          className="quiet more-button"
+          aria-label="More: settings, reviews and history"
+          aria-pressed={page === "More"}
+          onClick={() => navigate("More")}
+        >
+          More <span aria-hidden="true">···</span>
+        </button>
+      </header>
+      {error && (
+        <div role="alert" className="save-error">
+          <p>{error}</p>
+          <button onClick={clearError}>Dismiss</button>
+        </div>
+      )}
+      <main className="main-content">
+        {page === "Today" && (
+          <Today
+            key={date}
+            date={date}
+            onTask={setIntent}
+            onDone={done}
+            onPlan={() => setPlan(true)}
+            notify={notify}
+          />
+        )}
+        {page === "Inbox" && (
+          <Inbox
+            date={date}
+            onTask={setIntent}
+            onDone={done}
+            onNote={setNote}
+          />
+        )}
+        {page === "Projects" && (
+          <Projects
+            date={date}
+            onTask={setIntent}
+            onDone={done}
+            onNote={setNote}
+            notify={notify}
+          />
+        )}
+        {page === "More" && <More date={date} />}
+      </main>
+      <div className="bottom-dock">
+        <div className="capture-bar">
+          <button className="capture-button" onClick={() => setCapture(true)}>
+            <span aria-hidden="true">＋</span> Add{" "}
+            <span className="capture-hint">what’s on your mind</span>
+          </button>
+        </div>
+        <nav aria-label="Primary navigation">
+          {["Today", "Inbox", "Projects"].map((p) => (
+            <button
+              key={p}
+              aria-current={page === p ? "page" : undefined}
+              onClick={() => navigate(p)}
+            >
+              <Icon name={p} />
+              <span>{p}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast}</span>
+          {undo && (
+            <button
+              onClick={() => {
+                if (commit((d) => completeTask(d, undo.id, date, false))) {
+                  setUndo(null);
+                  notify("Task restored");
+                }
+              }}
+            >
+              Undo
+            </button>
+          )}
+          <button
+            aria-label="Dismiss notification"
+            onClick={() => setToast("")}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {capture && (
+        <Capture
+          onClose={() => setCapture(false)}
+          onSaved={() => {
+            setUndo(null);
+            notify("Saved to Inbox");
+          }}
+        />
+      )}
+      {intent && (
+        <TaskEditor
+          key={`${intent.kind}:${intent.task.id}:${date}`}
+          intent={intent}
+          date={date}
+          onClose={() => setIntent(null)}
+          onSaved={notify}
+        />
+      )}
+      {plan && (
+        <PlanPicker
+          date={date}
+          onClose={() => setPlan(false)}
+          onSaved={notify}
+        />
+      )}
+      {note && (
+        <NoteTools
+          key={note.id}
+          note={note}
+          date={date}
+          onClose={() => setNote(null)}
+          onSaved={notify}
+          onTask={setIntent}
+        />
+      )}
+    </div>
   );
 }
